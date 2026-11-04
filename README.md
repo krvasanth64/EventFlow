@@ -15,6 +15,17 @@ EventFlow is a lightweight JSON-based event agenda and show-control web app for 
 - Mobile-friendly responsive interface and home-screen manifest.
 - Live operator controls (start/finish/skip) with actual timestamps and countdown.
 
+## EventFlow V1.1 — On-Air & Awards
+
+New in V1.1 (source published; host/mobile acceptance pending):
+
+- **Live Control**: embedded local audio/video source preview with Play/Start, Pause, Resume, Stop & Reset, Finish & Next, and Skip. Media playback is initiated on the operator's browser; the app does not broadcast the actual audio/video stream to every viewer.
+- **Live schedule reforecast**: running time, changeover gaps, actual program end timestamps and current time determine revised start/end times and estimated finish. The original schedule remains available for comparison.
+- **Award Planner**: separate ordered award-winner entries by category, award name, winner, recipient details, presenter and notes. Drag or move ↑/↓, mark presented, and print a separate awards PDF.
+- The existing `runtime/data.json` remains compatible; the new `awards` array is initialized if missing. Do not delete runtime.
+
+[Read the V1.1 operator guide and acceptance checklist](docs/V1.1-ON-AIR-AWARDS.md).
+
 ## Windows first-time installation
 
 1. Install Node.js LTS (20 or newer) from https://nodejs.org/ and enable PATH.
