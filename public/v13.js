@@ -177,14 +177,80 @@ v12QueueCommand=function(p,action){
    return efLiveAction(p,action);
  }
 };
+let ef13MediaTransition=false;
+async function ef13PlayProgram(p,action){
+ const c=current();if(!c||!state.editing)return toast('Editing control required.');
+ if(p.sourceType==='url'&&!confirm('External URL playback cannot be detected. Start the program clock now?'))return;
+ const player=$('#efSourcePlayer'),onStage=$('#v12LiveRoot')?.dataset.program===p.id;
+ ef13MediaTransition=true;
+ try{
+   // Current on-stage media can be started by a direct user gesture.
+   if(p.sourceType==='file'&&onStage&&player){
+     try{if(action!=='resume')player.currentTime=0;await player.play();}
+     catch{toast('Media could not play. The program timer has not started.');return;}
+   }
+   const result=await api('/api/events/'+c.event.id+'/live','POST',{programId:p.id,action,revision:c.event.revision});
+   state.current=result;renderLive();
+   if(p.sourceType==='file'&&!onStage){
+     const next=$('#efSourcePlayer');
+     try{if(!next)throw Error('Preview unavailable');await next.play();}
+     catch{
+       const fresh=current();
+       const paused=await api('/api/events/'+fresh.event.id+'/live','POST',{programId:p.id,action:'pause',revision:fresh.event.revision});
+       state.current=paused;renderLive();
+       toast('Browser blocked automatic media playback. Program timer paused. Use the media Play control to resume.');
+     }
+   }
+ }catch(err){player?.pause();toast(err.message);try{await loadEvent(c.event.id)}catch{}}
+ finally{ef13MediaTransition=false;}
+}
+const ef13OldLiveAction=efLiveAction;
+efLiveAction=function(p,action){
+ if(['start','replay','resume'].includes(action))return ef13PlayProgram(p,action);
+ ef13MediaTransition=true;
+ return Promise.resolve(ef13OldLiveAction(p,action)).finally(()=>{ef13MediaTransition=false;});
+};
+function ef13BindPlayback(){
+ const media=$('#efSourcePlayer'),id=$('#v12LiveRoot')?.dataset.program;
+ if(!media||!id||media.dataset.ef13Bound)return;
+ media.dataset.ef13Bound='1';
+ const sendAction=action=>{
+   if(ef13MediaTransition||!state.editing)return;
+   const p=current()?.programs?.find(x=>x.id===id);
+   if(p)efLiveAction(p,action);
+ };
+ media.addEventListener('pause',()=>{
+   const p=current()?.programs?.find(x=>x.id===id);
+   if(p?.status==='running')sendAction('pause');
+ });
+ media.addEventListener('ended',()=>{
+   const p=current()?.programs?.find(x=>x.id===id);
+   if(p?.status==='running')sendAction('pause');
+ });
+ media.addEventListener('play',()=>{
+   const p=current()?.programs?.find(x=>x.id===id);
+   if(p?.status==='paused')sendAction('resume');
+   else if(['pending','ready','stopped'].includes(p?.status))sendAction('start');
+ });
+}
 const ef13BaseRenderLive=renderLive;
 renderLive=function(){
  ef13BaseRenderLive();
+ ef13BindPlayback();
  const c=current(),host=$('#pageLive');if(!c||!host)return;
  const head=host.querySelector('.head-actions');
  if(state.editing&&head&&!head.querySelector('#ef13EventSettings')){
    const button=document.createElement('button');button.id='ef13EventSettings';button.className='secondary';button.textContent='Event dropdown settings';
    button.onclick=ef13CatalogDialog;head.prepend(button);
+ }
+ const active=c.programs.find(p=>p.status==='running'||p.status==='paused')||c.programs.find(p=>!['done','skipped'].includes(p.status));
+ const script=$('#v12ReadScript'),source=$('#v12OpenSource');
+ if(script)script.classList.toggle('hidden',!active?.scriptSource);
+ if(source)source.classList.toggle('hidden',!(active&&(active.sourceType==='file'&&active.source||active.sourceType==='url'&&active.source)));
+ const externalHint=host.querySelector('#ef13ExternalClockHint');
+ if(active?.sourceType==='url'&&active.source&&!externalHint){
+   const mediaHost=host.querySelector('.ef-source-card');
+   if(mediaHost){const hint=document.createElement('p');hint.id='ef13ExternalClockHint';hint.className='muted tiny';hint.textContent='External URLs cannot report playback state. Start the on-air timer only when external playback begins.';mediaHost.append(hint);}
  }
  const note=host.querySelector('.v12-filter-row .muted.tiny');
  if(note)note.textContent='Drag any program to reorder. Playback stays attached to the current program ID.';
