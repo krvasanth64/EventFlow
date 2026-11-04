@@ -15,6 +15,14 @@ EventFlow is a lightweight JSON-based event agenda and show-control web app for 
 - Mobile-friendly responsive interface and home-screen manifest.
 - Live operator controls (start/finish/skip) with actual timestamps and countdown.
 
+## EventFlow V1.2 — Live Flexibility and LAN
+
+V1.2 introduces the editable Live Control running order, category filters, optional employee ID/name/contact references, script image/PDF attachments readable by Viewers, live award-winner preparation, replay after completion, and compact one-line A4 landscape reports showing filenames rather than full source URLs.
+
+The updated `start-eventflow.bat` listens on all local interfaces (`HOST=0.0.0.0`) by default. To permit browser access from another office PC, run `scripts/allow-lan-firewall.ps1` as Administrator to enable TCP 8765 on Private LAN profiles. Tailscale Serve remains tailnet-only and works through the localhost proxy. Existing data remains unchanged.
+
+**Before upgrading or diagnosing LAN access:** read [V1.2 launch and network instructions](docs/V1.2-LAUNCH-AND-NETWORK.md). Back up `runtime/`, stop the server, pull from GitHub, restart and verify `/api/health` reports `1.2.0`. Never commit the runtime folder.
+
 ## EventFlow V1.1 — On-Air & Awards
 
 New in V1.1 (source published; host/mobile acceptance pending):
