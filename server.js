@@ -13,7 +13,7 @@ const BACKUPS = path.join(ROOT, 'backups');
 const PUBLIC = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
-const APP_VERSION = '1.4.2-beta';
+const APP_VERSION = '1.4.3-beta';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
 const SESSION_AGE = 12 * 3600 * 1000;
 const LEASE_MS = 90 * 1000;
@@ -551,7 +551,7 @@ const server = http.createServer(async (req,res) => {
       const file=path.join(MEDIA,relative);if(!fs.existsSync(file))fail(404,'Missing file.');
       return streamFile(req,res,file,true);
     }
-    if(['GET','HEAD'].includes(req.method) && (route==='/' || /^\/(index\.html|manifest\.webmanifest|app\.js|extensions\.js|v12\.js|v13\.js|v14\.js|style\.css|icon\.svg)$/.test(route))) {
+    if(['GET','HEAD'].includes(req.method) && (route==='/' || /^\/(index\.html|manifest\.webmanifest|app\.js|extensions\.js|v12\.js|v13\.js|v14\.js|v15\.js|style\.css|icon\.svg)$/.test(route))) {
       const name=route==='/'?'index.html':route.slice(1);
       const file=path.join(PUBLIC,name);if(!fs.existsSync(file))fail(404,'Asset not found.');
       return streamFile(req,res,file);
