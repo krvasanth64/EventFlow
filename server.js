@@ -361,7 +361,7 @@ const server = http.createServer(async (req,res) => {
           if(!['running','paused'].includes(p.status))fail(409,'Start a program before finishing it.');
           p.elapsedSeconds=liveElapsed(p);p.resumedAt=null;p.actualEnd=now;p.status='done';
         }else if(actionName==='skip'){
-          if(active && active.id!==p.id)fail(409,'Stop or finish the active program first.');
+          if(active && active.id!==p.id && !['pending','ready','stopped'].includes(p.status))fail(409,'Stop or finish the active program first.');
           if(!['pending','ready','stopped','paused','running'].includes(p.status))fail(409,'Program cannot be skipped.');
           p.elapsedSeconds=liveElapsed(p);p.resumedAt=null;p.actualEnd=now;p.status='skipped';
         }else fail(400,'Invalid live action.');
