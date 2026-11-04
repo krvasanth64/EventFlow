@@ -168,3 +168,12 @@ audio.ef-source-player{min-height:65px}
  .ef14-led-grid{gap:12px}
  .ef14-led-header h1{font-size:25px}
 }
+
+/* V1.4.3: reversible skipped programs and award queue controls */
+.ef15-skipped-panel{border:1px solid #efc9d1;background:#fffafa;margin-top:14px}
+.ef15-skipped-panel .card-title{margin-bottom:12px;flex-wrap:wrap}
+.ef15-skipped-panel .v12-live-row{min-height:44px;padding:8px 11px}
+.ef15-skipped-panel [data-restore]{border-color:#96b0e6;color:#305aae;white-space:nowrap}
+#v12LiveAwards .v12-live-row[draggable="true"] .grip{cursor:grab}
+#v12LiveAwards .v12-live-row.ef13-drop-target{outline:2px dashed #7861d7;background:#f4f0ff}
+@media(max-width:700px){.ef15-skipped-panel [data-restore]{width:100%}#v12LiveAwards .v12-row-actions{flex-wrap:wrap}}
