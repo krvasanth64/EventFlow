@@ -44,6 +44,10 @@ test('V1.2 contact fields, reader attachments, replay and safe live order',async
  assert.equal((await fetch(base+viewUrl)).status,401,'unauthorized reading prevented');
  let live=await call('/api/events/'+e.id+'/live','POST',{revision:view.data.event.revision,programId:first.id,action:'start'},cookie);
  assert.equal(live.code,200);
+ const unsafeMove=await call('/api/events/'+e.id+'/reorder','POST',{revision:live.data.event.revision,ids:[second.id,first.id,third.id]},cookie);
+ assert.equal(unsafeMove.code,409,'unconfirmed move before live is rejected safely');
+ const beforeSkip=await call('/api/events/'+e.id,'GET',undefined,cookie);
+ assert.equal(beforeSkip.data.programs.find(x=>x.id===second.id).status,'pending','rejected move must not modify status');
  const liveMove=await call('/api/events/'+e.id+'/reorder','POST',{revision:live.data.event.revision,ids:[second.id,first.id,third.id],skipBeforeActive:true},cookie);
  assert.equal(liveMove.code,200,'live program positions can change without interrupting running state');
  assert.equal(liveMove.data.programs.find(x=>x.id===first.id).status,'running');
