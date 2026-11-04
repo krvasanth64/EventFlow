@@ -1,6 +1,6 @@
 'use strict';
 const $ = (s,root=document) => root.querySelector(s);
-const $ = (s,root=document) => [...(typeof root==='string' ? document.querySelector(root) : root)?.querySelectorAll(s) || []];
+const $$ = (s,root=document) => { const context=typeof root==='string'?document.querySelector(root):root; return context?[...context.querySelectorAll(s)]:[]; };
 const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const state={user:null,events:[],current:null,page:'dashboard',selected:null,editing:false,stream:null,clock:null,leaseTimer:null};
 const types=['speech','dance','music','video','ceremony','break','other'];
@@ -52,7 +52,7 @@ function showEventChooser(page,title){
   target.innerHTML=pageHead('SELECT EVENT',title,'Choose an event to continue, or create one from Overview.')+
   '<div class="event-grid">'+state.events.map(e=>'<button type="button" class="event-card event-choice" data-choose="'+esc(e.id)+'"><span class="tag '+esc(e.status)+'">'+esc(e.status)+'</span><h3>'+esc(e.title)+'</h3><div class="event-meta">'+esc(e.date)+' · '+esc(e.start)+'</div><div class="event-foot"><b>Open event →</b></div></button>').join('')+'</div>'+
   (!state.events.length?'<div class="empty"><strong>No events registered</strong>Go to Overview to create your first event.</div>':'');
-  $('[data-choose]',target).forEach(b=>b.onclick=()=>selectEvent(b.dataset.choose,page));
+  $$('[data-choose]',target).forEach(b=>b.onclick=()=>selectEvent(b.dataset.choose,page));
 }
 async function syncWorkspace(){if(!state.user)return;await refreshEvents();if(state.current){try{await loadEvent(state.current.event.id,false)}catch(e){if(e.message==='Event not found.'){state.current=null;state.selected=null;try{localStorage.removeItem('eventflow.activeEvent')}catch{};updateEventPicker();state.page='dashboard';navigate('dashboard');return}throw e}}render()}
 function connectStream(){
