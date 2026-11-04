@@ -3,6 +3,23 @@
 let v12ProgramFilter='';
 let v12AwardFilter='';
 let v12LiveFilter='';
+let v12LiveAwardFilter='';
+function v12RenderLiveAwards(){
+ const c=current(),list=$('#v12LiveAwards');if(!c||!list)return;
+ const awards=(c.awards||[]).filter(a=>!v12LiveAwardFilter||a.category===v12LiveAwardFilter);
+ list.innerHTML=awards.map((a,i)=>'<div class="v12-live-row"><span class="program-num">'+(a.order+1)+'</span>'+
+ '<div class="v12-live-info"><strong>'+esc(a.awardName)+' — '+esc(a.winnerName)+'</strong>'+
+ '<small>'+esc(a.category||'General')+' · '+esc(a.employeeName||'')+' · '+esc(a.contact||'No contact')+'</small>'+
+ '<small>Presented by: '+esc(a.presenter||'Unassigned')+'</small></div>'+
+ '<span class="tag '+(a.status==='presented'?'live':'')+'">'+esc(a.status)+'</span>'+
+ (state.editing?'<div class="v12-row-actions"><button data-award-edit="'+esc(a.id)+'">Edit</button>'+
+ (a.status!=='presented'?'<button data-award-done="'+esc(a.id)+'">Mark presented</button>':'<button data-award-pending="'+esc(a.id)+'">Reopen</button>')+'</div>':'')+
+ '</div>').join('')||'<div class="empty"><strong>No awards for this category</strong>Choose another category or add an award.</div>';
+ $('[data-award-edit]',list).forEach(b=>b.onclick=()=>efAwardModal((c.awards||[]).find(a=>a.id===b.dataset.awardEdit)));
+ $('[data-award-done]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardDone),'presented'));
+ $('[data-award-pending]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardPending),'pending'));
+}
+
 const v12Url=source=>'/media/'+String(source).split('/').map(encodeURIComponent).join('/');
 const v12FileName=p=>p.sourceType==='file'?(p.sourceName||String(p.source||'').split('/').pop()):p.sourceType==='url'?'External URL':p.sourceType==='linked'?String(p.source||'').split(/[\\/]/).pop():'—';
 function v12CategoryOptions(items,selected){
@@ -144,6 +161,7 @@ function v12UpdateLive(){
  if(root.dataset.revision!==String(c.event.revision)){
    root.dataset.revision=String(c.event.revision);
    v12RenderQueue();
+   v12RenderLiveAwards();
  }
 }
 renderLive=function(){
@@ -165,11 +183,17 @@ renderLive=function(){
  '<div class="ef-forecast-metrics"><div>Expected event finish <b id="v12Finish">—</b></div><div>Schedule variance <b id="v12Delta">—</b></div></div></div>'+
  '<div class="card"><div class="v12-filter-row"><label>Program category<select id="v12LiveFilter">'+v12CategoryOptions(programs,v12LiveFilter)+'</select></label>'+
  (state.editing?'<button id="v12AddProgram" class="primary">+ Add program</button>':'')+
- '<span class="muted tiny">Upcoming programs can be reordered while on air.</span></div><div id="v12LiveQueue" class="v12-queue"></div></div></div>';
+ '<span class="muted tiny">Upcoming programs can be reordered while on air.</span></div><div id="v12LiveQueue" class="v12-queue"></div></div>'+
+ '<div class="card"><div class="card-title"><h3>Award winners — live preparation</h3>'+
+ '<button class="secondary" id="v12OpenAwards">Full award planner</button></div>'+
+ '<div class="v12-filter-row"><label>Award category<select id="v12LiveAwardFilter">'+v12CategoryOptions(c.awards||[],v12LiveAwardFilter)+'</select></label></div>'+
+ '<div id="v12LiveAwards" class="v12-queue"></div></div></div>';
  wireLock();
  $('#v12ReadScript')?.addEventListener('click',()=>v12Preview(now,true));
  $('#v12OpenSource')?.addEventListener('click',()=>v12OpenReference(now));
  $('#v12AddProgram')?.addEventListener('click',()=>programDialog());
+ $('#v12OpenAwards').onclick=()=>navigate('awards');
+ $('#v12LiveAwardFilter').onchange=ev=>{v12LiveAwardFilter=ev.target.value;v12RenderLiveAwards()};
  $('#v12LiveFilter').onchange=ev=>{v12LiveFilter=ev.target.value;v12RenderQueue()};
  clearInterval(state.clock);
  v12UpdateLive();
