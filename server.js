@@ -90,12 +90,13 @@ const eventPrograms = id => db.programs.filter(p => p.eventId === id).sort((a,b)
 const eventAwards = id => db.awards.filter(a => a.eventId === id).sort((a,b) => a.order - b.order);
 const ISO = () => new Date().toISOString();
 const liveElapsed = (p, now = time()) => Math.max(0, Number(p.elapsedSeconds)||0) + (p.status==='running' && (p.resumedAt || (p.elapsedSeconds===undefined && p.actualStart)) ? Math.max(0,(now-Date.parse(p.resumedAt || p.actualStart))/1000) : 0);
+const personFields = b => ({ employeeId:String(b.employeeId||'').trim().slice(0,60),employeeName:String(b.employeeName||'').trim().slice(0,160),contact:String(b.contact||'').trim().slice(0,40) });
 const awardInput = b => {
   const category=String(b.category||'').trim().slice(0,100);
   const awardName=String(b.awardName||'').trim().slice(0,160);
   const winnerName=String(b.winnerName||'').trim().slice(0,160);
   if (!category || !awardName || !winnerName) fail(400,'Category, award name, and winner are required.');
-  return {category,awardName,winnerName,recipientDetails:String(b.recipientDetails||'').slice(0,200),
+  return {category,awardName,winnerName,...personFields(b),recipientDetails:String(b.recipientDetails||'').slice(0,200),
     presenter:String(b.presenter||'').slice(0,120),notes:String(b.notes||'').slice(0,1000)};
 };
 function broadcast(eventId) {
@@ -137,7 +138,7 @@ function eventResponse(id, user, req) {
   return { event:e, programs:eventPrograms(id), awards:eventAwards(id), history:db.history.filter(h => h.eventId === id).slice(0,30),
     lock: lock ? { user:db.users.find(u => u.id===lock.userId)?.name || 'Unknown', mine:isEditor(user,id,cookie(req,'ef_session')), expires:lock.expires } : null };
 }
-const mime = ext => ({ '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.mp3':'audio/mpeg','.mp4':'video/mp4','.webm':'video/webm','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.mov':'video/quicktime','.pdf':'application/pdf','.webmanifest':'application/manifest+json' })[ext] || 'application/octet-stream';
+const mime = ext => ({ '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.ico':'image/x-icon','.mp3':'audio/mpeg','.mp4':'video/mp4','.webm':'video/webm','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.mov':'video/quicktime','.pdf':'application/pdf','.webmanifest':'application/manifest+json' })[ext] || 'application/octet-stream';
 function streamFile(req, res, file, allowRange=false) {
   const stat = fs.statSync(file); const type = mime(path.extname(file).toLowerCase());
   const h = { 'Content-Type':type, 'Accept-Ranges': allowRange ? 'bytes':'none', 'X-Content-Type-Options':'nosniff' };
@@ -212,12 +213,13 @@ const server = http.createServer(async (req,res) => {
         const p=db.programs.find(p=>p.id===programId&&p.eventId===id);
         if(!p) fail(404,'Program not found.');
         const raw=url.searchParams.get('filename')||'media.bin';
+        const isScript=url.searchParams.get('kind')==='script';
         const ext=path.extname(raw).toLowerCase();
-        if(!['.mp3','.mp4','.webm','.wav','.ogg','.m4a','.mov'].includes(ext)) fail(400,'Unsupported audio/video extension.');
+        if(!(isScript?['.png','.jpg','.jpeg','.webp','.pdf']:['.mp3','.mp4','.webm','.wav','.ogg','.m4a','.mov']).includes(ext)) fail(400,'Unsupported file extension.');
         const length=Number(req.headers['content-length']);
         if(!Number.isSafeInteger(length)||length<1||length>MAX_UPLOAD) fail(413,'Upload must have a valid Content-Length and fit within size limit.');
         const folder=path.join(MEDIA,id);fs.mkdirSync(folder,{recursive:true});
-        const fileName=safe(p.id.slice(0,8)+'_'+p.title)+ext;const target=path.join(folder,fileName);const temp=target+'.part-'+uid();
+        const fileName=safe(p.id.slice(0,8)+'_'+(isScript?'script_':'')+p.title)+ext;const target=path.join(folder,fileName);const temp=target+'.part-'+uid();
         let size=0;
         try {
           await new Promise((resolve,reject)=>{
@@ -231,7 +233,7 @@ const server = http.createServer(async (req,res) => {
           if(expectedRevision!==e.revision) fail(409,'The event changed during upload. Refresh and retry.');
           fs.renameSync(temp,target);
         } finally { if(fs.existsSync(temp)) fs.unlinkSync(temp); }
-        p.sourceType='file';p.source=path.relative(MEDIA,target).replace(/\\/g,'/');p.sourceName=raw.slice(0,255);e.revision++;audit('media.uploaded',user,id,p.title);persist();broadcast(id);
+        if(isScript){p.scriptSource=path.relative(MEDIA,target).replace(/\\/g,'/');p.scriptName=raw.slice(0,255);}else{p.sourceType='file';p.source=path.relative(MEDIA,target).replace(/\\/g,'/');p.sourceName=raw.slice(0,255);}e.revision++;audit(isScript?'script.uploaded':'media.uploaded',user,id,p.title);persist();broadcast(id);
         return send(res,200,{program:p,revision:e.revision});
       }
       // Award plan is independent of the chronological program schedule.
@@ -263,7 +265,7 @@ const server = http.createServer(async (req,res) => {
           if(['pending','ready','presented','skipped'].includes(b.status)) {
             a.status=b.status;a.presentedAt=b.status==='presented'?(a.presentedAt||ISO()):null;
           }
-          if(['category','awardName','winnerName','recipientDetails','presenter','notes'].some(k=>b[k]!==undefined)){
+          if(['category','awardName','winnerName','recipientDetails','presenter','notes','employeeId','employeeName','contact'].some(k=>b[k]!==undefined)){
             Object.assign(a,awardInput({...a,...b}));
           }
           audit('award.updated',user,id,a.awardName);
@@ -314,7 +316,7 @@ const server = http.createServer(async (req,res) => {
       if (action==='programs' && req.method==='POST') {
         requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);validProgram(b);
         if(eventPrograms(id).some(p=>p.title.toLowerCase()===b.title.trim().toLowerCase())) fail(409,'Program title must be unique in this event.');
-        const p={id:uid(),eventId:id,order:eventPrograms(id).length,title:b.title.trim().slice(0,150),type:b.type,duration:Number(b.duration),gap:Number(b.gap),presenter:String(b.presenter||'').slice(0,120),notes:String(b.notes||'').slice(0,1000),sourceType:b.sourceType,source:b.sourceType==='url'||b.sourceType==='linked'?String(b.source||'').slice(0,2000):'',actualStart:null,actualEnd:null,status:'pending'};
+        const p={id:uid(),eventId:id,order:eventPrograms(id).length,title:b.title.trim().slice(0,150),type:b.type,duration:Number(b.duration),gap:Number(b.gap),presenter:String(b.presenter||'').slice(0,120),category:String(b.category||'General').slice(0,100),...personFields(b),notes:String(b.notes||'').slice(0,1000),sourceType:b.sourceType,source:b.sourceType==='url'||b.sourceType==='linked'?String(b.source||'').slice(0,2000):'',actualStart:null,actualEnd:null,status:'pending'};
         db.programs.push(p);e.revision++;audit('program.created',user,id,p.title);persist();broadcast(id);return send(res,201,eventResponse(id,user,req));
       }
       const programMatch=/^programs\/([a-f0-9-]+)$/.exec(action);
@@ -325,7 +327,7 @@ const server = http.createServer(async (req,res) => {
         else {
           const changed={...p,...b};validProgram(changed);
           if(eventPrograms(id).some(x=>x.id!==p.id && x.title.toLowerCase()===changed.title.trim().toLowerCase())) fail(409,'Program title must be unique in this event.');
-          Object.assign(p,{title:changed.title.trim().slice(0,150),type:changed.type,duration:Number(changed.duration),gap:Number(changed.gap),presenter:String(changed.presenter||'').slice(0,120),notes:String(changed.notes||'').slice(0,1000),sourceType:changed.sourceType,source:changed.sourceType==='url'||changed.sourceType==='linked'?String(changed.source||'').slice(0,2000):changed.sourceType==='file'?p.source:'',status:['pending','ready','running','done','skipped'].includes(changed.status)?changed.status:p.status,actualStart:changed.actualStart===undefined?p.actualStart:changed.actualStart,actualEnd:changed.actualEnd===undefined?p.actualEnd:changed.actualEnd});
+          Object.assign(p,{title:changed.title.trim().slice(0,150),type:changed.type,duration:Number(changed.duration),gap:Number(changed.gap),presenter:String(changed.presenter||'').slice(0,120),category:String(changed.category||'General').slice(0,100),...personFields(changed),notes:String(changed.notes||'').slice(0,1000),sourceType:changed.sourceType,source:changed.sourceType==='url'||changed.sourceType==='linked'?String(changed.source||'').slice(0,2000):changed.sourceType==='file'?p.source:'',status:['pending','ready','running','done','skipped'].includes(changed.status)?changed.status:p.status,actualStart:changed.actualStart===undefined?p.actualStart:changed.actualStart,actualEnd:changed.actualEnd===undefined?p.actualEnd:changed.actualEnd});
           audit('program.updated',user,id,p.title);
         }
         e.revision++;persist();broadcast(id);return send(res,200,eventResponse(id,user,req));
@@ -383,7 +385,7 @@ const server = http.createServer(async (req,res) => {
     if(mediaMatch&&['GET','HEAD'].includes(req.method)) {
       need(user);
       const relative=mediaMatch[1]+'/'+mediaMatch[2];
-      if(!db.programs.some(p=>p.sourceType==='file'&&p.source===relative)) fail(404,'File not registered.');
+      if(!db.programs.some(p=>(p.sourceType==='file'&&p.source===relative)||p.scriptSource===relative)) fail(404,'File not registered.');
       const file=path.join(MEDIA,relative);if(!fs.existsSync(file))fail(404,'Missing file.');
       return streamFile(req,res,file,true);
     }
