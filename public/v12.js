@@ -21,7 +21,7 @@ function v12RenderLiveAwards(){
 }
 
 const v12Url=source=>'/media/'+String(source).split('/').map(encodeURIComponent).join('/');
-const v12FileName=p=>{if(p.sourceType==='file')return p.sourceName||String(p.source||'').split('/').pop()||'—';if(p.sourceType==='linked')return String(p.source||'').split(/[\\/]/).pop()||'—';if(p.sourceType==='url'){try{const name=decodeURIComponent(new URL(p.source).pathname.split('/').filter(Boolean).pop()||'');return /\\.[a-z0-9]{2,6}$/i.test(name)?name:'Web link'}catch{return 'Web link'}}return '—'};
+const v12FileName=p=>{if(p.sourceType==='file')return p.sourceName||String(p.source||'').split('/').pop()||'—';if(p.sourceType==='linked')return String(p.source||'').split(/[\\/]/).pop()||'—';if(p.sourceType==='url'){try{const name=decodeURIComponent(new URL(p.source).pathname.split('/').filter(Boolean).pop()||'');return /\.[a-z0-9]{2,6}$/i.test(name)?name:'Web link'}catch{return 'Web link'}}return '—'};
 function v12CategoryOptions(items,selected){
  const opts=[...new Set(items.map(p=>String(p.category||'General').trim()||'General'))].sort((a,b)=>a.localeCompare(b));
  return '<option value="">All categories</option>'+opts.map(c=>'<option value="'+esc(c)+'" '+(selected===c?'selected':'')+'>'+esc(c)+'</option>').join('');
