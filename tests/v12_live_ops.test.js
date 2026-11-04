@@ -52,7 +52,15 @@ test('V1.2 contact fields, reader attachments, replay and safe live order',async
  assert.equal(liveMove.code,200,'live program positions can change without interrupting running state');
  assert.equal(liveMove.data.programs.find(x=>x.id===first.id).status,'running');
  assert.equal(liveMove.data.programs.find(x=>x.id===second.id).status,'skipped','pending item moved ahead of live is skipped with explicit confirmation');
- const reordered=await call('/api/events/'+e.id+'/reorder','POST',{revision:liveMove.data.event.revision,ids:[first.id,third.id,second.id]},cookie);
+ const restore=await call('/api/events/'+e.id+'/programs/'+second.id+'/restore','POST',{revision:liveMove.data.event.revision},cookie);
+ assert.equal(restore.code,200,'skipped program can be restored');
+ assert.equal(restore.data.programs.find(x=>x.id===second.id).status,'pending');
+ assert.equal(restore.data.programs.find(x=>x.id===first.id).status,'running','restoration does not affect on-air program');
+ assert.equal(restore.data.programs.find(x=>x.id===second.id).actualEnd,null);
+ assert.equal(restore.data.programs.findIndex(x=>x.id===second.id),restore.data.programs.findIndex(x=>x.id===first.id)+1,'restore inserts directly after live');
+ const restoreAgain=await call('/api/events/'+e.id+'/programs/'+second.id+'/restore','POST',{revision:restore.data.event.revision},cookie);
+ assert.equal(restoreAgain.code,409,'restoring pending program twice is rejected');
+ const reordered=await call('/api/events/'+e.id+'/reorder','POST',{revision:restore.data.event.revision,ids:[first.id,third.id,second.id]},cookie);
  assert.equal(reordered.code,200,'upcoming programs can be reordered');
  live=await call('/api/events/'+e.id+'/live','POST',{revision:reordered.data.event.revision,programId:first.id,action:'finish'},cookie);
  assert.equal(live.code,200);
