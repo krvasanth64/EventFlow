@@ -10,3 +10,38 @@
 .event-choice{text-align:left;font:inherit;width:100%;min-height:155px;appearance:none}
 .event-choice h3{font-weight:750}
 @media(max-width:700px){.event-picker-label{display:none}#globalEventSelect{min-width:105px;max-width:160px;padding:7px 5px;font-size:11px}.top-actions{gap:7px}.event-choice{min-height:125px}}
+
+/* V1.1 operator console and awards */
+.ef-live-grid{display:grid;grid-template-columns:minmax(310px,1.1fr) minmax(270px,1fr);gap:18px;align-items:stretch;margin-bottom:23px}
+.ef-stage{background:linear-gradient(145deg,#1b2541,#131b2f);color:#fff;border-radius:18px;padding:28px;min-width:0}
+.ef-stage-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ef-stage-state{font-size:11px;font-weight:800;letter-spacing:1px;color:#adbae2}
+.ef-overline{font-size:11px;color:#adb7cf;letter-spacing:2px;font-weight:800;margin-top:28px}
+.ef-stage-title{font-size:clamp(24px,3vw,35px);margin:12px 0 26px;overflow-wrap:anywhere}
+.ef-countdown{display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;margin:16px 0}
+.ef-countdown>span{font:700 clamp(35px,5vw,60px)/1 Outfit,sans-serif;letter-spacing:-1px}
+.ef-countdown>small{color:#aebad2}
+.ef-stage-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
+.ef-stage-stats>span{color:#aebad2;font-size:12px}.ef-stage-stats b{display:block;color:#fff;font-size:15px;margin-top:5px}
+.ef-live-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.ef-source-card{margin:0;min-width:0}
+.ef-media-wrap{background:#121a2c;border-radius:12px;padding:12px}
+.ef-source-player{display:block;width:100%;max-height:340px;border-radius:8px}
+audio.ef-source-player{min-height:65px}
+.ef-media-caption{color:#c4cce0;font-size:12px;margin-top:11px;overflow-wrap:anywhere}
+.ef-no-media{border:1px dashed #d6daea;background:#f7f8fd;border-radius:12px;padding:28px 18px;text-align:center;color:#626e85;min-height:190px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;overflow-wrap:anywhere}
+.ef-no-media strong{color:#283653}.ef-no-media p{line-height:1.6}
+.ef-source-symbol{font-size:30px;color:#7765d8}
+.ef-forecast-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:16px}
+.ef-forecast-head h3{font-size:21px;margin-top:6px}
+.ef-forecast-metrics{display:flex;gap:15px;flex-wrap:wrap;font-size:12px;color:#8590a4}
+.ef-forecast-metrics b{display:block;color:#293651;font-size:18px;margin-top:4px}
+.ef-award-item{display:flex;align-items:center;gap:13px;padding:15px;border:1px solid #e5e8f0;border-radius:12px;min-width:0;flex-wrap:wrap}
+.ef-award-desc{flex:1;min-width:150px}
+.ef-award-desc strong{display:block;font-size:14px}
+.ef-award-desc small{display:block;color:#8e9bad;margin-top:6px;overflow-wrap:anywhere}
+.ef-award-actions{display:flex;gap:5px;flex-wrap:wrap}
+.ef-award-actions button{border:1px solid #e4e7f0;border-radius:8px;background:white;color:#4a5671;padding:7px 9px;font-size:12px;font-weight:700}
+.ef-award-actions button:hover{border-color:#7463df;color:#5d49c1}
+@media(max-width:900px){.ef-live-grid{grid-template-columns:1fr}.ef-forecast-head{align-items:start;flex-direction:column}}
+@media(max-width:700px){.ef-stage{padding:20px}.ef-stage-stats{gap:8px}.ef-source-card{padding:17px}.ef-award-item{gap:8px}.ef-award-actions{width:100%;justify-content:flex-end}.ef-live-actions button{flex:1}.ef-forecast-metrics{gap:8px 18px}.ef-forecast-metrics b{font-size:15px}}
