@@ -251,7 +251,7 @@ const server = http.createServer(async (req,res) => {
         return send(res,200,body,{'Content-Type':'application/json; charset=utf-8',
           'Content-Disposition':'attachment; filename="'+safe(e.title)+'_'+id.slice(0,8)+'.json"'});
       }
-      const downloadMatch=/^programs\\/([a-f0-9-]+)\\/download$/.exec(action);
+      const downloadMatch=/^programs\/([a-f0-9-]+)\/download$/.exec(action);
       if(downloadMatch && req.method==='GET'){
         need(user,['admin','editor','live_controller']);
         const p=db.programs.find(x=>x.id===downloadMatch[1]&&x.eventId===id);
