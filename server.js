@@ -174,7 +174,7 @@ function eventResponse(id, user, req) {
 const mime = ext => ({ '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.ico':'image/x-icon','.mp3':'audio/mpeg','.mp4':'video/mp4','.webm':'video/webm','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.mov':'video/quicktime','.pdf':'application/pdf','.webmanifest':'application/manifest+json' })[ext] || 'application/octet-stream';
 function streamFile(req, res, file, allowRange=false) {
   const stat = fs.statSync(file); const type = mime(path.extname(file).toLowerCase());
-  const h = { 'Content-Type':type, 'Accept-Ranges': allowRange ? 'bytes':'none', 'X-Content-Type-Options':'nosniff' };
+  const h = { 'Content-Type':type, 'Accept-Ranges': allowRange ? 'bytes':'none', 'X-Content-Type-Options':'nosniff', 'Cache-Control':'no-store' };
   if (allowRange && req.headers.range) {
     const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
     if (!match) return send(res,416,'Invalid range',{ 'Content-Range':'bytes */'+stat.size });
