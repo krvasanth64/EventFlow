@@ -17,7 +17,7 @@ async function api(url,method='GET',body,opts={}) {const headers={};if(body!==un
 }
 async function act(fn){try{await fn()}catch(e){toast(e.message)}}
 function showApp(){ $('#loginPage').classList.add('hidden');$('#app').classList.remove('hidden');$('#userName').textContent=state.user.name;$('#userAvatar').textContent=state.user.name.slice(0,1).toUpperCase();$$('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));$$('[data-page="planner"],[data-page="live"]').forEach(x=>x.classList.remove('hidden'));$('#dateNow').textContent=new Date().toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}); }
-function showLogin(){state.user=null;state.current=null;state.editing=false;state.stream?.close();clearInterval(state.leaseTimer);$('#app').classList.add('hidden');$('#loginPage').classList.remove('hidden')}
+function showLogin(){state.user=null;state.current=null;state.editing=false;state.stream?.close();clearInterval(state.leaseTimer);clearInterval(state.syncTimer);$('#app').classList.add('hidden');$('#loginPage').classList.remove('hidden')}
 async function initialize(){try{const r=await api('/api/me');state.user=r.user;showApp();await refreshEvents();navigate('dashboard');connectStream()}catch{showLogin()}}
 $('#loginForm').addEventListener('submit',e=>{e.preventDefault();act(async()=>{const f=new FormData(e.target);const x=await api('/api/login','POST',Object.fromEntries(f));state.user=x.user;showApp();await refreshEvents();navigate('dashboard');connectStream()})});
 $('#logout').onclick=()=>act(async()=>{await api('/api/logout','POST',{});showLogin()});
@@ -29,7 +29,22 @@ function navigate(page){if(page==='users'&&state.user.role!=='admin')return;stat
 async function refreshEvents(){const x=await api('/api/events');state.events=x.events;}
 async function loadEvent(id,update=true){const x=await api('/api/events/'+id);state.current=x;state.editing=!!x.lock?.mine;if(update)render();}
 function selectEvent(id,page='planner'){return act(async()=>{await loadEvent(id,false);state.selected=null;navigate(page)})}
-function connectStream(){state.stream?.close();const s=new EventSource('/api/stream');state.stream=s;s.onopen=()=>{$('#connectionStatus').textContent='Connected'};s.onerror=()=>{$('#connectionStatus').textContent='Reconnecting…'};s.onmessage=()=>act(async()=>{await refreshEvents();if(state.current)await loadEvent(state.current.event.id,false);render()});clearInterval(state.leaseTimer);state.leaseTimer=setInterval(()=>{if(state.editing&&state.current)api('/api/events/'+state.current.event.id+'/lease/renew','POST',{}).catch(()=>{state.editing=false;render()})},30000)}
+async function syncWorkspace(){if(!state.user)return;await refreshEvents();if(state.current){try{await loadEvent(state.current.event.id,false)}catch(e){if(e.message==='Event not found.'){state.current=null;state.selected=null;state.page='dashboard';navigate('dashboard');return}throw e}}render()}
+function connectStream(){
+  state.stream?.close();
+  clearInterval(state.leaseTimer);
+  clearInterval(state.syncTimer);
+  const s=new EventSource('/api/stream');
+  state.stream=s;
+  const status=$('#connectionStatus');
+  status.textContent='Connecting…';
+  s.onopen=()=>{if(state.stream===s)status.textContent='Live connected'};
+  s.onerror=()=>{if(state.stream===s)status.textContent='Sync via polling'};
+  s.onmessage=()=>act(syncWorkspace);
+  // Keep LAN/Tailscale viewers current if a proxy or browser interrupts the event stream.
+  state.syncTimer=setInterval(()=>{if(state.user)act(syncWorkspace)},15000);
+  state.leaseTimer=setInterval(()=>{if(state.editing&&state.current)api('/api/events/'+state.current.event.id+'/lease/renew','POST',{}).catch(()=>{state.editing=false;render()})},30000);
+}
 function pageHead(kicker,title,subtitle,buttons=''){return '<div class="page-head"><div><div class="eyebrow">'+kicker+'</div><h1>'+title+'</h1><p>'+subtitle+'</p></div><div class="head-actions">'+buttons+'</div></div>'}
 function stat(label,value,foot){return '<div class="stat"><div class="stat-label">'+label+'</div><div class="stat-value">'+value+'</div><div class="stat-foot">'+foot+'</div></div>'}
 function render(){if(!state.user)return;const page=state.page;if(page==='dashboard')renderDashboard();if(page==='planner')renderPlanner();if(page==='live')renderLive();if(page==='reports')renderReports();if(page==='users')renderUsers();}
