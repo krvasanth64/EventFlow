@@ -44,9 +44,10 @@ test('V1.2 contact fields, reader attachments, replay and safe live order',async
  assert.equal((await fetch(base+viewUrl)).status,401,'unauthorized reading prevented');
  let live=await call('/api/events/'+e.id+'/live','POST',{revision:view.data.event.revision,programId:first.id,action:'start'},cookie);
  assert.equal(live.code,200);
- const blocked=await call('/api/events/'+e.id+'/reorder','POST',{revision:live.data.event.revision,ids:[second.id,first.id,third.id]},cookie);
- assert.equal(blocked.code,409,'active slot cannot be moved');
- const reordered=await call('/api/events/'+e.id+'/reorder','POST',{revision:live.data.event.revision,ids:[first.id,third.id,second.id]},cookie);
+ const liveMove=await call('/api/events/'+e.id+'/reorder','POST',{revision:live.data.event.revision,ids:[second.id,first.id,third.id]},cookie);
+ assert.equal(liveMove.code,200,'live program positions can change without interrupting running state');
+ assert.equal(liveMove.data.programs.find(x=>x.id===first.id).status,'running');
+ const reordered=await call('/api/events/'+e.id+'/reorder','POST',{revision:liveMove.data.event.revision,ids:[first.id,third.id,second.id]},cookie);
  assert.equal(reordered.code,200,'upcoming programs can be reordered');
  live=await call('/api/events/'+e.id+'/live','POST',{revision:reordered.data.event.revision,programId:first.id,action:'finish'},cookie);
  assert.equal(live.code,200);
