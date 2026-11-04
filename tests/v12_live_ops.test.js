@@ -1,0 +1,65 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const os=require('node:os');
+const net=require('node:net');
+const {spawn}=require('node:child_process');
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const port=()=>new Promise((resolve,reject)=>{const server=net.createServer();server.on('error',reject);server.listen(0,'127.0.0.1',()=>{const p=server.address().port;server.close(()=>resolve(p))})});
+test('V1.2 contact fields, reader attachments, replay and safe live order',async t=>{
+ const folder=fs.mkdtempSync(path.join(os.tmpdir(),'eventflow-v12-'));const p=await port();
+ const server=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env:{...process.env,EVENTFLOW_DATA:folder,EVENTFLOW_ADMIN_PASSWORD:'testPassword123',HOST:'127.0.0.1',PORT:String(p)},stdio:'pipe'});
+ t.after(()=>{server.kill();fs.rmSync(folder,{recursive:true,force:true})});
+ const base='http://127.0.0.1:'+p;let ready=false;
+ for(let i=0;i<80;i++){try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}await pause(75)}
+ assert.ok(ready,'server started');
+ async function call(route,method='GET',body,cookie){
+  const headers={};if(cookie)headers.Cookie=cookie;if(body!==undefined)headers['Content-Type']='application/json';
+  const r=await fetch(base+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
+  return {code:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};
+ }
+ const login=await call('/api/login','POST',{username:'admin',password:'testPassword123'});const cookie=login.cookie;
+ const e=(await call('/api/events','POST',{title:'Reference Event',date:'2026-11-12',start:'10:00'},cookie)).data.event;
+ let view=await call('/api/events/'+e.id+'/lease','POST',{},cookie);
+ const add=async title=>{
+  view=await call('/api/events/'+e.id+'/programs','POST',{revision:view.data.event.revision,title,category:'Cultural',type:'speech',duration:80,gap:15,sourceType:'none',employeeId:'EMP-12',employeeName:'Test Person',contact:'1234567890'},cookie);
+  assert.equal(view.code,201);
+ };
+ await add('One');await add('Two');await add('Three');
+ assert.equal(view.data.programs[0].category,'Cultural');
+ assert.equal(view.data.programs[1].employeeId,'EMP-12');
+ const first=view.data.programs[0],second=view.data.programs[1],third=view.data.programs[2];
+ const screenshot=Buffer.from('fake-image-binary');
+ const u='/api/events/'+e.id+'/media?kind=script&program='+first.id+'&filename=script.png&revision='+view.data.event.revision;
+ const raw=await fetch(base+u,{method:'POST',headers:{Cookie:cookie},body:screenshot});
+ assert.equal(raw.status,200);
+ const upload=await raw.json();
+ assert.ok(upload.program.scriptSource.endsWith('.png'));
+ view=await call('/api/events/'+e.id,'GET',undefined,cookie);
+ assert.equal(view.data.programs[0].sourceType,'none','speech remains independent of script upload');
+ const viewUrl='/media/'+upload.program.scriptSource;
+ assert.equal((await fetch(base+viewUrl,{headers:{Cookie:cookie}})).status,200);
+ assert.equal((await fetch(base+viewUrl)).status,401,'unauthorized reading prevented');
+ let live=await call('/api/events/'+e.id+'/live','POST',{revision:view.data.event.revision,programId:first.id,action:'start'},cookie);
+ assert.equal(live.code,200);
+ const blocked=await call('/api/events/'+e.id+'/reorder','POST',{revision:live.data.event.revision,ids:[second.id,first.id,third.id]},cookie);
+ assert.equal(blocked.code,409,'active slot cannot be moved');
+ const reordered=await call('/api/events/'+e.id+'/reorder','POST',{revision:live.data.event.revision,ids:[first.id,third.id,second.id]},cookie);
+ assert.equal(reordered.code,200,'upcoming programs can be reordered');
+ live=await call('/api/events/'+e.id+'/live','POST',{revision:reordered.data.event.revision,programId:first.id,action:'finish'},cookie);
+ assert.equal(live.code,200);
+ live=await call('/api/events/'+e.id+'/live','POST',{revision:live.data.event.revision,programId:first.id,action:'replay'},cookie);
+ assert.equal(live.code,200);
+ assert.equal(live.data.programs.find(x=>x.id===first.id).status,'running');
+ const award=await call('/api/events/'+e.id+'/awards','POST',{revision:live.data.event.revision,category:'Excellence',awardName:'Best Team',winnerName:'Test Winner',employeeId:'E001',employeeName:'Team Contact',contact:'9876543210'},cookie);
+ assert.equal(award.code,201);
+ assert.equal(award.data.awards[0].contact,'9876543210');
+ const asset=await fetch(base+'/v12.js');
+ assert.equal(asset.status,200);
+ assert.match(await asset.text(),/v12QueueRow/);
+ const disk=JSON.parse(fs.readFileSync(path.join(folder,'data.json'),'utf8'));
+ assert.equal(disk.programs[0].scriptName,'script.png');
+ assert.equal(disk.awards.length,1);
+});
