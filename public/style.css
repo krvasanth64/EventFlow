@@ -80,3 +80,35 @@ audio.ef-source-player{min-height:65px}
  #printSheet h1{margin:0 0 5px;font-size:16px}
  #printSheet p{font-size:10px}
 }
+
+/* V1.3 live compact view / rich event catalog settings */
+.ef13-compact-row{padding:6px 9px!important;gap:6px!important;min-height:43px}
+.ef13-compact-row .program-num{height:24px;min-width:24px;font-size:11px}
+.ef13-compact-row .v12-live-info strong{font-size:12px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ef13-compact-row .v12-live-info small{font-size:10px;line-height:1.1;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ef13-compact-row .grip{cursor:grab;touch-action:none;font-size:18px}
+.ef13-compact-row .v12-row-actions{gap:3px}
+.ef13-compact-row .v12-row-actions button{padding:4px 7px;font-size:10px;line-height:1.1;min-height:24px}
+.ef13-compact-row .tag{font-size:9px;padding:3px 7px}
+.ef13-drop-target{outline:2px dashed #7560e0;outline-offset:-2px;background:#f4f2ff}
+.ef13-dragging{opacity:.45}
+.ef13-catalogs{display:grid;gap:16px;max-height:62vh;overflow:auto;padding:4px}
+.ef13-catalog{padding:13px;border:1px solid #e4e7f0;border-radius:12px}
+.ef13-catalog .card-title{margin-bottom:9px}
+.ef13-catalog h3{font-size:15px}
+.ef13-catalog-list{display:grid;gap:5px}
+.ef13-catalog-entry{display:flex;align-items:center;gap:8px}
+.ef13-catalog-entry>input{margin:0;flex:1;min-width:80px;padding:6px 10px;font-size:12px}
+.ef13-toggle{display:flex;gap:4px;align-items:center;white-space:nowrap;font-size:11px;color:#6d7891}
+.ef13-toggle input{width:auto;margin:0}
+.ef13-remove{padding:5px 8px;min-width:28px}
+.ef13-existing-sources{grid-column:1/-1;border-top:1px solid #e5e7ef;padding-top:12px;display:grid;gap:8px}
+.ef13-existing-sources h3{font-size:14px}
+.ef13-source-info{display:flex;align-items:center;flex-wrap:wrap;gap:8px;border:1px solid #e9ebf2;border-radius:9px;padding:8px}
+.ef13-source-info b{font-size:11px;min-width:90px}
+.ef13-source-info span{flex:1;min-width:100px;font-size:11px;overflow-wrap:anywhere;color:#67758d}
+.ef13-script-toggle>span{display:flex;gap:8px;align-items:center}
+.ef13-script-toggle input{width:auto;margin:0}
+.ef13-report-awards{background:white;border:1px solid #e5e8f0;border-radius:15px;padding:18px;margin-top:18px}
+.ef13-report-awards h3{margin-bottom:12px}
+@media(max-width:700px){.ef13-compact-row{padding:7px}.ef13-compact-row .v12-live-info{min-width:135px}.ef13-compact-row .v12-row-actions{width:100%}.ef13-compact-row .v12-row-actions button{flex:0 1 auto}.ef13-catalogs{max-height:60vh}}
