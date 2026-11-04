@@ -279,7 +279,11 @@ const server = http.createServer(async (req,res) => {
         const actionName=String(b.action||'');
         const active=programs.find(x=>x.status==='running' || x.status==='paused');
         const now=ISO();
-        if(actionName==='start'){
+        if(actionName==='replay'){
+          if(active)fail(409,'Finish or stop the active program before replaying another.');
+          if(!['done','skipped','stopped'].includes(p.status))fail(409,'Only completed, skipped or stopped programs may be replayed.');
+          p.actualStart=now;p.actualEnd=null;p.elapsedSeconds=0;p.resumedAt=now;p.status='running';e.status='live';
+        }else if(actionName==='start'){
           if(active && active.id!==p.id)fail(409,'Finish or stop the active program before starting another.');
           if(!['pending','ready','stopped'].includes(p.status))fail(409,'Program cannot start from '+p.status+'.');
           p.actualStart=now;p.actualEnd=null;p.elapsedSeconds=0;p.resumedAt=now;p.status='running';e.status='live';
@@ -309,6 +313,7 @@ const server = http.createServer(async (req,res) => {
         requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
         const current=eventPrograms(id);const ids=b.ids;
         if(!Array.isArray(ids)||ids.length!==current.length||new Set(ids).size!==ids.length||!ids.every(x=>current.some(p=>p.id===x))) fail(400,'The order must contain every program exactly once.');
+        if(e.status==='live' && current.some((p,i)=>['running','paused','done','skipped'].includes(p.status)&&ids[i]!==p.id)) fail(409,'Only upcoming programs may change positions while live. Completed and on-air slots stay fixed.');
         ids.forEach((pid,i)=>db.programs.find(p=>p.id===pid).order=i);
         e.revision++;audit('programs.reordered',user,id);persist();broadcast(id);
         return send(res,200,eventResponse(id,user,req));
