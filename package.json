@@ -1,6 +1,6 @@
 {
   "name": "eventflow",
-  "version": "1.3.0",
+  "version": "1.4.0-beta.1",
   "private": true,
   "description": "Portable JSON-powered event planning and live show control",
   "scripts": {
