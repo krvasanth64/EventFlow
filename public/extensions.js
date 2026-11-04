@@ -1,7 +1,7 @@
 'use strict';
 // EventFlow V1.1: live operator console and independently ordered awards.
 const efClock = date => { const d=new Date(date);return Number.isNaN(d.getTime())?'—':d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); };
-const efSec = (program,now=Date.now()) => Math.max(0,Number(program.elapsedSeconds)||0)+(program.status==='running'&&program.resumedAt?Math.max(0,(now-Date.parse(program.resumedAt))/1000):0);
+const efSec = (program,now=Date.now()) => Math.max(0,Number(program.elapsedSeconds)||0)+(program.status==='running'&&(program.resumedAt||(program.elapsedSeconds===undefined&&program.actualStart))?Math.max(0,(now-Date.parse(program.resumedAt||program.actualStart))/1000):0);
 const efTime = ms => efClock(ms);
 const efActive = p => ['running','paused'].includes(p.status);
 function efForecast(e,programs,now=Date.now()) {
