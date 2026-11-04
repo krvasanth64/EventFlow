@@ -359,6 +359,9 @@ const server = http.createServer(async (req,res) => {
         const awards=eventAwards(id);
         if(!Array.isArray(b.ids)||b.ids.length!==awards.length||new Set(b.ids).size!==b.ids.length||
           !b.ids.every(x=>awards.some(a=>a.id===x)))fail(400,'Award order must include every award exactly once.');
+        for(let i=0;i<awards.length;i++)
+          if(awards[i].status==='presented'&&b.ids[i]!==awards[i].id)
+            fail(409,'Presented awards cannot be moved during live reordering.');
         b.ids.forEach((awardId,i)=>db.awards.find(a=>a.id===awardId).order=i);
         e.revision++;audit('awards.reordered',user,id);persist();broadcast(id);
         return send(res,200,eventResponse(id,user,req));
@@ -447,6 +450,24 @@ const server = http.createServer(async (req,res) => {
         if(eventPrograms(id).some(p=>p.title.toLowerCase()===b.title.trim().toLowerCase())) fail(409,'Program title must be unique in this event.');
         const p={id:uid(),eventId:id,order:eventPrograms(id).length,title:b.title.trim().slice(0,150),type:b.type,duration:Number(b.duration),gap:Number(b.gap),presenter:String(b.presenter||'').slice(0,120),category:String(b.category||'General').slice(0,100),...personFields(b),notes:String(b.notes||'').slice(0,1000),sourceType:b.sourceType,source:b.sourceType==='url'||b.sourceType==='linked'?String(b.source||'').slice(0,2000):'',actualStart:null,actualEnd:null,status:'pending'};
         db.programs.push(p);e.revision++;audit('program.created',user,id,p.title);persist();broadcast(id);return send(res,201,eventResponse(id,user,req));
+      }
+      const restoreMatch=/^programs\/([a-f0-9-]+)\/restore$/.exec(action);
+      if(restoreMatch && req.method==='POST'){
+        requireLiveOperator(user,id);const b=await jsonBody(req);revision(b,e);
+        const all=eventPrograms(id),p=all.find(x=>x.id===restoreMatch[1]);
+        if(!p)fail(404,'Program not found.');
+        if(p.status!=='skipped')fail(409,'Only skipped programs can be restored to upcoming.');
+        const active=all.find(x=>['running','paused'].includes(x.status));
+        const remaining=all.filter(x=>x.id!==p.id);
+        let position=active?remaining.findIndex(x=>x.id===active.id)+1:
+          remaining.findIndex(x=>['pending','ready','stopped'].includes(x.status));
+        if(position<0)position=remaining.length;
+        remaining.splice(position,0,p);
+        p.status='pending';p.actualStart=null;p.actualEnd=null;p.resumedAt=null;p.elapsedSeconds=0;
+        remaining.forEach((item,index)=>item.order=index);
+        if(e.status==='completed')e.status='ready';
+        e.revision++;audit('live.restore',user,id,p.title);persist();broadcast(id);
+        return send(res,200,eventResponse(id,user,req));
       }
       const archiveMatch=/^programs\/([a-f0-9-]+)\/archive$/.exec(action);
       if(archiveMatch && req.method==='POST'){
