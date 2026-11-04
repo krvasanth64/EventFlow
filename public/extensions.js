@@ -144,7 +144,7 @@ function efAwardModal(a){
     },'AWARD PRESENTATION');
 }
 async function efAwardAction(award,action){
-  const c=current();if(!c||!state.editing)return;
+  const c=current();if(!c||!(action==='delete'?state.editing:['admin','editor','live_controller'].includes(state.user?.role)))return;
   try{
     if(action==='delete'&&!confirm('Delete this award entry?'))return;
     await api('/api/events/'+c.event.id+'/awards/'+award.id,action==='delete'?'DELETE':'PATCH',
