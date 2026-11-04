@@ -61,7 +61,7 @@ function efSyncLiveUi(){
   const now=programs.find(p=>efActive(p))||programs.find(p=>!['done','skipped'].includes(p.status));
   const forecast=efForecast(e,programs);
   const panel=$('#efLiveRoot');
-  if(!panel||panel.dataset.event!==e.id||panel.dataset.program!==(now?.id||''))return renderLive();
+  if(!panel||panel.dataset.event!==e.id||panel.dataset.program!==(now?.id||'')||panel.dataset.editing!==String(state.editing))return renderLive();
   const item=forecast.rows.find(p=>p.id===now?.id);
   const running=now?.status==='running',paused=now?.status==='paused';
   const time=$('#efLiveRemaining');if(time)time.textContent=now?duration(item.remaining):'00:00';
@@ -106,12 +106,12 @@ renderLive=function(){
   const c=current();if(!c){showEventChooser('live','Choose an event for live control');return;}
   const e=c.event,programs=c.programs,now=programs.find(p=>efActive(p))||programs.find(p=>!['done','skipped'].includes(p.status));
   const page=$('#pageLive'),key=now?.id||'';
-  if($('#efLiveRoot',page)?.dataset.event===e.id&&$('#efLiveRoot',page)?.dataset.program===key){
+  if($('#efLiveRoot',page)?.dataset.event===e.id&&$('#efLiveRoot',page)?.dataset.program===key&&$('#efLiveRoot',page)?.dataset.editing===String(state.editing)){
     efSyncLiveUi();return;
   }
   const item=now;
   const markup=pageHead('ON-AIR CONTROL',esc(e.title),'Live forecasts update from the current clock, completed programs and remaining durations.',editorButtons())+
-  banner()+'<div id="efLiveRoot" data-event="'+esc(e.id)+'" data-program="'+esc(key)+'">'+
+  banner()+'<div id="efLiveRoot" data-event="'+esc(e.id)+'" data-program="'+esc(key)+'" data-editing="'+String(state.editing)+'">'+
   '<div class="ef-live-grid"><section class="ef-stage"><div class="ef-stage-head"><span class="tag live">● ON AIR</span><span id="efLiveState" class="ef-stage-state"></span></div><p class="ef-overline">NOW PRESENTING</p><h2 class="ef-stage-title">'+esc(now?.title||'All programs complete')+'</h2>'+
   '<div class="ef-countdown"><span id="efLiveRemaining">—</span><small>Remaining planned time</small></div><div class="live-progress"><span id="efLiveProgress"></span></div><div class="ef-stage-stats"><span>Elapsed <b id="efLiveElapsed">0s</b></span><span>Next <b id="efLiveNext">—</b></span></div><div id="efLiveActions" class="ef-live-actions"></div></section>'+
   '<section class="card ef-source-card"><div class="card-title"><h3>On-Air Media Preview</h3><span class="muted">Plays on this device</span></div>'+efMediaMarkup(item)+'<p class="muted tiny">Other viewers can open their own preview; audio playback does not automatically broadcast to their devices.</p></section></div>'+
