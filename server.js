@@ -32,6 +32,8 @@ function checkPassword(password, stored) {
 }
 const fresh = () => ({ version: 1, revision: 0, users: [], events: [], programs: [], history: [] });
 let db = fs.existsSync(DB) ? JSON.parse(fs.readFileSync(DB, 'utf8')) : fresh();
+// Backward-compatible additions: existing runtime/data.json requires no migration.
+if (!Array.isArray(db.awards)) db.awards = [];
 let sessions = new Map();
 let clients = new Set();
 let leases = new Map();
@@ -85,6 +87,17 @@ function jsonBody(req, max = 2 * 1024 * 1024) {
 const publicUser = u => ({ id: u.id, username: u.username, name: u.name, role: u.role, active: u.active });
 const byEvent = id => db.events.find(e => e.id === id);
 const eventPrograms = id => db.programs.filter(p => p.eventId === id).sort((a,b) => a.order - b.order);
+const eventAwards = id => db.awards.filter(a => a.eventId === id).sort((a,b) => a.order - b.order);
+const ISO = () => new Date().toISOString();
+const liveElapsed = (p, now = time()) => Math.max(0, Number(p.elapsedSeconds)||0) + (p.status==='running' && p.resumedAt ? Math.max(0,(now-Date.parse(p.resumedAt))/1000) : 0);
+const awardInput = b => {
+  const category=String(b.category||'').trim().slice(0,100);
+  const awardName=String(b.awardName||'').trim().slice(0,160);
+  const winnerName=String(b.winnerName||'').trim().slice(0,160);
+  if (!category || !awardName || !winnerName) fail(400,'Category, award name, and winner are required.');
+  return {category,awardName,winnerName,recipientDetails:String(b.recipientDetails||'').slice(0,200),
+    presenter:String(b.presenter||'').slice(0,120),notes:String(b.notes||'').slice(0,1000)};
+};
 function broadcast(eventId) {
   const packet = 'data: ' + JSON.stringify({ eventId, revision: db.revision }) + '\n\n';
   for (const c of clients) { try { c.write(packet); } catch { clients.delete(c); } }
@@ -121,7 +134,7 @@ function validProgram(p) {
 function eventResponse(id, user, req) {
   const e = byEvent(id); if (!e) fail(404,'Event not found.');
   const lock = leaseOf(id);
-  return { event:e, programs:eventPrograms(id), history:db.history.filter(h => h.eventId === id).slice(0,30),
+  return { event:e, programs:eventPrograms(id), awards:eventAwards(id), history:db.history.filter(h => h.eventId === id).slice(0,30),
     lock: lock ? { user:db.users.find(u => u.id===lock.userId)?.name || 'Unknown', mine:isEditor(user,id,cookie(req,'ef_session')), expires:lock.expires } : null };
 }
 const mime = ext => ({ '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.mp3':'audio/mpeg','.mp4':'video/mp4','.webm':'video/webm','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.mov':'video/quicktime','.pdf':'application/pdf','.webmanifest':'application/manifest+json' })[ext] || 'application/octet-stream';
@@ -221,6 +234,75 @@ const server = http.createServer(async (req,res) => {
         p.sourceType='file';p.source=path.relative(MEDIA,target).replace(/\\/g,'/');p.sourceName=raw.slice(0,255);e.revision++;audit('media.uploaded',user,id,p.title);persist();broadcast(id);
         return send(res,200,{program:p,revision:e.revision});
       }
+      // Award plan is independent of the chronological program schedule.
+      if (action==='awards' && req.method==='POST') {
+        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        const details=awardInput(b);
+        const award={id:uid(),eventId:id,order:eventAwards(id).length,...details,status:'pending',presentedAt:null};
+        db.awards.push(award);e.revision++;audit('award.created',user,id,award.awardName);
+        persist();broadcast(id);return send(res,201,eventResponse(id,user,req));
+      }
+      if (action==='awards/reorder' && req.method==='POST') {
+        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        const awards=eventAwards(id);
+        if(!Array.isArray(b.ids)||b.ids.length!==awards.length||new Set(b.ids).size!==b.ids.length||
+          !b.ids.every(x=>awards.some(a=>a.id===x)))fail(400,'Award order must include every award exactly once.');
+        b.ids.forEach((awardId,i)=>db.awards.find(a=>a.id===awardId).order=i);
+        e.revision++;audit('awards.reordered',user,id);persist();broadcast(id);
+        return send(res,200,eventResponse(id,user,req));
+      }
+      const awardMatch=/^awards\/([a-f0-9-]+)$/.exec(action);
+      if(awardMatch && ['PATCH','DELETE'].includes(req.method)) {
+        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        const a=db.awards.find(x=>x.eventId===id&&x.id===awardMatch[1]);if(!a)fail(404,'Award not found.');
+        if(req.method==='DELETE'){
+          db.awards=db.awards.filter(x=>x.id!==a.id);
+          eventAwards(id).forEach((x,i)=>x.order=i);
+          audit('award.deleted',user,id,a.awardName);
+        }else{
+          if(['pending','ready','presented','skipped'].includes(b.status)) {
+            a.status=b.status;a.presentedAt=b.status==='presented'?(a.presentedAt||ISO()):null;
+          }
+          if(['category','awardName','winnerName','recipientDetails','presenter','notes'].some(k=>b[k]!==undefined)){
+            Object.assign(a,awardInput({...a,...b}));
+          }
+          audit('award.updated',user,id,a.awardName);
+        }
+        e.revision++;persist();broadcast(id);return send(res,200,eventResponse(id,user,req));
+      }
+      if (action==='live' && req.method==='POST') {
+        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        const programs=eventPrograms(id);
+        const p=programs.find(x=>x.id===b.programId);if(!p)fail(404,'Program not found.');
+        const actionName=String(b.action||'');
+        const active=programs.find(x=>x.status==='running' || x.status==='paused');
+        const now=ISO();
+        if(actionName==='start'){
+          if(active && active.id!==p.id)fail(409,'Finish or stop the active program before starting another.');
+          if(!['pending','ready','stopped'].includes(p.status))fail(409,'Program cannot start from '+p.status+'.');
+          p.actualStart=now;p.actualEnd=null;p.elapsedSeconds=0;p.resumedAt=now;p.status='running';e.status='live';
+        }else if(actionName==='pause'){
+          if(p.status!=='running')fail(409,'Only a running program can be paused.');
+          p.elapsedSeconds=liveElapsed(p);p.resumedAt=null;p.status='paused';
+        }else if(actionName==='resume'){
+          if(active && active.id!==p.id)fail(409,'Another program is active.');
+          if(p.status!=='paused')fail(409,'Only a paused program can be resumed.');
+          p.resumedAt=now;p.status='running';
+        }else if(actionName==='stop'){
+          if(!['running','paused'].includes(p.status))fail(409,'Only an active program can be stopped.');
+          p.elapsedSeconds=0;p.resumedAt=null;p.actualStart=null;p.actualEnd=null;p.status='stopped';
+        }else if(actionName==='finish'){
+          if(!['running','paused'].includes(p.status))fail(409,'Start a program before finishing it.');
+          p.elapsedSeconds=liveElapsed(p);p.resumedAt=null;p.actualEnd=now;p.status='done';
+        }else if(actionName==='skip'){
+          if(active && active.id!==p.id)fail(409,'Stop or finish the active program first.');
+          if(!['pending','ready','stopped','paused','running'].includes(p.status))fail(409,'Program cannot be skipped.');
+          p.elapsedSeconds=liveElapsed(p);p.resumedAt=null;p.actualEnd=now;p.status='skipped';
+        }else fail(400,'Invalid live action.');
+        if(!programs.some(x=>['pending','ready','running','paused','stopped'].includes(x.status)))e.status='completed';
+        e.revision++;audit('live.'+actionName,user,id,p.title);persist();broadcast(id);
+        return send(res,200,eventResponse(id,user,req));
+      }
       if (action==='reorder' && req.method==='POST') {
         requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
         const current=eventPrograms(id);const ids=b.ids;
@@ -261,7 +343,7 @@ const server = http.createServer(async (req,res) => {
       }
       if(!action&&req.method==='DELETE'){
         requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
-        db.events=db.events.filter(x=>x.id!==id);db.programs=db.programs.filter(x=>x.eventId!==id);leases.delete(id);audit('event.deleted',user,id,e.title);persist();broadcast(id);return send(res,200,{ok:true});
+        db.events=db.events.filter(x=>x.id!==id);db.programs=db.programs.filter(x=>x.eventId!==id);db.awards=db.awards.filter(x=>x.eventId!==id);leases.delete(id);audit('event.deleted',user,id,e.title);persist();broadcast(id);return send(res,200,{ok:true});
       }
     }
     if (route==='/api/users') {
