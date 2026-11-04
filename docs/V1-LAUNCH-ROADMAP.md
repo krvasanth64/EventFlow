@@ -12,16 +12,25 @@ Last updated: 2026-11-04. Target: stable Windows-hosted, Tailscale-accessible ev
 | JSON event persistence | Observed working | "PK Day - 2026" displayed |
 | Admin creates Editor | Observed working | Team page shows second Editor account |
 | JavaScript syntax and backend integration | Passed in CI | GitHub Actions run 41787744993 |
-| DOM selector crash on Team page | Fix committed, device retest pending | Commit 2d60ef5 |
-| Event chooser / shared selection | Fix committed, device retest pending | Header picker, saved selection, chooser cards |
-| SSE fallback | Implemented; device retest pending | Polling every 15 seconds |
+| DOM selector crash on Team page | User confirmed fixed | Acceptance check 2026-11-04 |
+| Event chooser / shared selection | User confirmed passed | Header picker; Planner and Reports accessible |
+| SSE and polling fallback | SSE lifecycle corrected; automated test passed; Tailscale device retest pending | Tests media_stream.test.js, CI run 41788754862 |
+
+## Second-stage implementation (2026-11-04)
+
+- Corrected the live SSE subscriber lifecycle: subscribe for the streaming *response* lifetime, not request lifetime.
+- Added a ready event for live clients and retained the 15-second fallback polling.
+- Added upload-time event revision verification (both before and after streaming) to avoid stale uploads overwriting a concurrently edited program.
+- Live Finish button is disabled until a program is started.
+- Added independent integration coverage for authenticated SSE broadcasts, rejected stale media uploads, MP4 upload persistence, byte-range playback, and unauthenticated media denial.
+- CI run 41788754862 passed. These are automated tests only; no claim of phone/browser Tailscale acceptance.
 
 ## V1.0 acceptance checklist (must be completed on actual host devices)
 
 - [ ] Restart host with latest main; hard-refresh desktop and mobile browsers.
-- [ ] Verify global event picker and last-selected event across Planner, Live Control and Reports.
-- [ ] Create and edit user accounts; verify Manage button has no JS error.
-- [ ] Create 5 programs of different types, including speech without media.
+- [x] Verify header event picker, event availability, Planner and Reports selection. Live Control route remains included in second-stage device testing.
+- [x] Verify Team & Access Manage button opens without a JS error.
+- [ ] Create 5 programs of different types. Single speech with no media: **passed**.
 - [ ] Drag/drop and move up/down; check calculated program start/end, duration and changeover gaps.
 - [ ] Upload MP3 and MP4; confirm preview/seek from desktop and mobile over Tailscale.
 - [ ] Register web URL; verify external link and fallback for sites preventing embed.
@@ -39,7 +48,7 @@ Last updated: 2026-11-04. Target: stable Windows-hosted, Tailscale-accessible ev
 
 | Priority | Feature | Status |
 |---|---|---|
-| P0 | Persist event selection across pages and Team Manage exception | Code fix passed CI; device retest pending |
+| P0 | Persist event selection across pages and Team Manage exception | User acceptance passed |
 | P0 | Media uploads/streaming under Tailscale | Implemented; actual media test pending |
 | P0 | Per-event leases in two real browser sessions | Backend test passed; user acceptance pending |
 | P0 | Mobile usability and playback | Responsive CSS present; device test pending |
@@ -63,4 +72,4 @@ Last updated: 2026-11-04. Target: stable Windows-hosted, Tailscale-accessible ev
 5. Test **PK Day - 2026** from the global header Event dropdown. Check Team > Manage.
 6. Complete remaining checklist with desktop and phone on your tailnet.
 
-Record observed pass/fail results before declaring V1.0 released. Keep Tailscale Funnel disabled.
+Record observed pass/fail results before declaring V1.0 released. Keep Tailscale Funnel disabled. Never commit the runtime folder. The user confirmed six initial UI checks, but video upload, phone playback, print rendering and two-device concurrency remain unverified.
