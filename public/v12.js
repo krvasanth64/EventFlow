@@ -150,12 +150,12 @@ function v12UpdateLive(){
  const bar=$('#v12Progress');if(bar)bar.style.width=now?Math.min(100,100*efSec(now)/Math.max(now.duration,1))+'%':'0%';
  const btnHost=$('#v12OnAirActions');
  if(btnHost){
-   const controls=state.editing&&now?
+   const controls=efCanOperate()&&now?
      (now.status==='running'?'<button class="secondary" data-live="pause">Ⅱ Pause</button>':
       now.status==='paused'?'<button class="primary" data-live="resume">▶ Resume</button>':
       '<button class="primary" data-live="start">▶ Start / Play</button>')+
      (efActive(now)?'<button class="secondary" data-live="stop">■ Stop & Reset</button><button class="primary" data-live="finish">✓ Finish</button>':'<button class="secondary" data-live="skip">Skip</button>'):
-     '<span class="muted">Viewer — edit lock is required to operate.</span>';
+     '<span class="muted">Viewing only — live-control permission required.</span>';
    if(btnHost.dataset.mode!==controls){btnHost.innerHTML=controls;btnHost.dataset.mode=controls;$$('[data-live]',btnHost).forEach(b=>b.onclick=()=>efLiveAction(now,b.dataset.live));}
  }
  if(root.dataset.revision!==String(c.event.revision)){
@@ -177,12 +177,12 @@ renderLive=function(){
  '<div class="ef-stage-stats"><span>Elapsed <b id="v12Elapsed">—</b></span><span>Estimated program end <b id="v12End">—</b></span></div>'+
  '<div class="ef-live-actions" id="v12OnAirActions"></div></section>'+
  '<section class="card ef-source-card"><div class="card-title"><h3>On-air source</h3><span class="muted">Operator preview</span></div>'+efMediaMarkup(now)+
- '<div class="v12-source-tools">'+(now?'<button class="secondary" id="v12ReadScript">Read script</button><button class="secondary" id="v12OpenSource">Open source ↗</button>':'')+'</div>'+
+ '<div class="v12-source-tools">'+(now?'<button class="secondary" id="v12ReadScript">Read script</button><button class="secondary" id="v12OpenSource">Open source ↗</button>':'')+(now?.sourceType==='file'&&efCanOperate()?'<a class="secondary" style="display:inline-block;padding:10px 14px;text-decoration:none" href="/api/events/'+encodeURIComponent(c.event.id)+'/programs/'+encodeURIComponent(now.id)+'/download">Download DJ media</a>':'')+'</div>'+
  '<p class="muted tiny">Source playback runs on this device. Status and ETA synchronize to viewers.</p></section></div>'+
  '<div class="ef-forecast-head"><div><div class="eyebrow">DYNAMIC TIMELINE</div><h3>Live running order</h3></div>'+
  '<div class="ef-forecast-metrics"><div>Expected event finish <b id="v12Finish">—</b></div><div>Schedule variance <b id="v12Delta">—</b></div></div></div>'+
  '<div class="card"><div class="v12-filter-row"><label>Program category<select id="v12LiveFilter">'+v12CategoryOptions(programs,v12LiveFilter)+'</select></label>'+
- (state.editing?'<button id="v12AddProgram" class="primary">+ Add program</button>':'')+
+ (efCanEdit()?'<button id="v12AddProgram" class="primary">+ Add program</button>':'')+
  '<span class="muted tiny">Upcoming programs can be reordered while on air.</span></div><div id="v12LiveQueue" class="v12-queue"></div></div>'+
  '<div class="card"><div class="card-title"><h3>Award winners — live preparation</h3>'+
  '<button class="secondary" id="v12OpenAwards">Full award planner</button></div>'+
