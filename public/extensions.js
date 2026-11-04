@@ -87,7 +87,7 @@ function efSyncLiveUi(){
   if(list)list.innerHTML=forecast.rows.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(p.title)+'</td><td>'+esc(p.status)+'</td><td>'+efTime(p.plannedStart)+'</td><td>'+efTime(p.forecastStart)+'</td><td>'+efTime(p.forecastEnd)+'</td></tr>').join('');
 }
 async function efLiveAction(p,action){
-  const c=current();if(!c||!state.editing)return toast('Editing control required.');
+  const c=current();if(!c||!['admin','editor','live_controller'].includes(state.user?.role))return toast('Live-control permission required.');
   const player=$('#efSourcePlayer');
   if(action==='pause'||action==='stop'||action==='finish'){if(player)player.pause();}
   if(action==='stop'&&player){try{player.currentTime=0}catch{}}
