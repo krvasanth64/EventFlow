@@ -1,5 +1,7 @@
 'use strict';
-/* EventFlow V1.3 — event catalogs, live drag reorder, conditional controls, versioned media. */
+/* EventFlow V1.4 — add independently authorized live control. */
+const efCanOperate=()=>['admin','editor','live_controller'].includes(state.user?.role);
+const efCanEdit=()=>state.editing&&['admin','editor'].includes(state.user?.role);
 const EF13_DEFAULT = {
  programTypes:['Solo Dance','Group Dance','Drama','Magic Show','Stand-up Comedy','Speech','Karaoke Singing','Solo Singing','Group Singing','Instrumental Music','DJ Performance','Mime','Awards Ceremony','Welcome Address','Vote of Thanks','Other','speech','dance','music','video','ceremony','break','other'],
  programCategories:['General','Cultural','Music','Dance','Speech','Entertainment','Awards','Ceremony','Break'],
@@ -108,7 +110,7 @@ function ef13ConditionalActions(p,editor,active){
  else if(p.sourceType==='linked'&&p.source)h+='<button data-cmd="open">File reference</button>';
  if(p.scriptSource)h+='<button data-cmd="script">Read script</button>';
  if(!editor)return h;
- h+='<button data-cmd="edit">Edit</button>';
+ if(efCanEdit())h+='<button data-cmd="edit">Edit</button>';
  h+='<button data-cmd="up" title="Move program up">↑</button><button data-cmd="down" title="Move program down">↓</button>';
  if(isRunning)h+='<button data-cmd="pause">Pause</button><button data-cmd="finish">Finish</button>';
  else if(isPaused)h+='<button data-cmd="resume">Resume</button><button data-cmd="stop">Stop</button>';
@@ -118,16 +120,16 @@ function ef13ConditionalActions(p,editor,active){
 }
 v12QueueRow=function(p,i,forecast,active){
  const scheduled=forecast.rows.find(x=>x.id===p.id);
- return '<div class="v12-live-row ef13-compact-row" data-id="'+esc(p.id)+'" draggable="'+state.editing+'">'+
- '<span class="grip" draggable="'+state.editing+'" title="Drag program to a new position">⠿</span><span class="program-num">'+(i+1)+'</span>'+
+ return '<div class="v12-live-row ef13-compact-row" data-id="'+esc(p.id)+'" draggable="'+efCanOperate()+'">'+
+ '<span class="grip" draggable="'+efCanOperate()+'" title="Drag program to a new position">⠿</span><span class="program-num">'+(i+1)+'</span>'+
  '<div class="v12-live-info"><strong title="'+esc(p.title)+'">'+esc(p.title)+'</strong>'+
  '<small>'+esc(p.category||'General')+' · '+esc(p.employeeName||p.presenter||'—')+' · '+esc(p.contact||'')+'</small>'+
  '<small>'+efTime(scheduled.forecastStart)+'–'+efTime(scheduled.forecastEnd)+' · '+duration(p.duration)+'</small></div>'+
  '<span class="tag '+(efActive(p)?'live':'')+'">'+esc(p.status)+'</span>'+
- '<div class="v12-row-actions">'+ef13ConditionalActions(p,state.editing,active)+'</div></div>';
+ '<div class="v12-row-actions">'+ef13ConditionalActions(p,efCanOperate(),active)+'</div></div>';
 };
 function ef13PersistOrder(from,to){
- const c=current(),all=c?.programs||[];if(!c||!state.editing)return;
+ const c=current(),all=c?.programs||[];if(!c||!efCanOperate())return;
  const ids=all.map(x=>x.id),fromIndex=ids.indexOf(from),toIndex=ids.indexOf(to);
  if(fromIndex<0||toIndex<0||fromIndex===toIndex)return;
  ids.splice(fromIndex,1);ids.splice(toIndex,0,from);
@@ -144,7 +146,7 @@ v12RenderQueue=function(){
  $$('.v12-live-row',host).forEach(row=>{
    const p=all.find(x=>x.id===row.dataset.id);
    $$('[data-cmd]',row).forEach(btn=>btn.onclick=()=>v12QueueCommand(p,btn.dataset.cmd));
-   if(!state.editing)return;
+   if(!efCanOperate())return;
    row.addEventListener('dragstart',event=>{
      event.dataTransfer.effectAllowed='move';
      event.dataTransfer.setData('text/plain',p.id);
@@ -163,7 +165,7 @@ v12QueueCommand=function(p,action){
  if(action==='preview')return v12Preview(p);
  if(action==='script')return v12Preview(p,true);
  if(action==='open')return v12OpenReference(p);
- if(action==='edit')return programDialog(p);
+ if(action==='edit')return efCanEdit()?programDialog(p):toast('Editor permission required.');
  if(action==='up'||action==='down'){
    const items=current().programs,idx=items.findIndex(x=>x.id===p.id),next=items[idx+(action==='up'?-1:1)];
    return next?ef13PersistOrder(p.id,next.id):undefined;
@@ -179,7 +181,7 @@ v12QueueCommand=function(p,action){
 };
 let ef13MediaTransition=false;
 async function ef13PlayProgram(p,action){
- const c=current();if(!c||!state.editing)return toast('Editing control required.');
+ const c=current();if(!c||!efCanOperate())return toast('Live-control permission required.');
  if(p.sourceType==='url'&&!confirm('External URL playback cannot be detected. Start the program clock now?'))return;
  const player=$('#efSourcePlayer'),onStage=$('#v12LiveRoot')?.dataset.program===p.id;
  ef13MediaTransition=true;
@@ -215,7 +217,7 @@ function ef13BindPlayback(){
  if(!media||!id||media.dataset.ef13Bound)return;
  media.dataset.ef13Bound='1';
  const sendAction=action=>{
-   if(ef13MediaTransition||!state.editing)return;
+   if(ef13MediaTransition||!efCanOperate())return;
    const p=current()?.programs?.find(x=>x.id===id);
    if(p)efLiveAction(p,action);
  };
