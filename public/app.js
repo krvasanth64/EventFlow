@@ -166,6 +166,17 @@ $('#printReport')?.addEventListener('click',printSheet);
    a.href='/api/events/'+encodeURIComponent(c.event.id)+'/export';a.style.cssText='display:inline-block;padding:10px 14px;margin:10px 0;text-decoration:none';
    $('#pageReports').prepend(a);
  }
+ if(['admin','editor','live_controller'].includes(state.user.role)){
+   const a=document.createElement('a');a.className='secondary';a.textContent='Download DJ package (ZIP)';
+   a.href='/api/events/'+encodeURIComponent(c.event.id)+'/dj-package';
+   a.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
+   $('#pageReports').prepend(a);
+ }
+ if(state.user.role==='admin'){
+   const a=document.createElement('a');a.className='secondary';a.textContent='Download complete backup (ZIP)';
+   a.href='/api/backup/full';a.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
+   $('#pageReports').prepend(a);
+ }
 }
 function renderUsers(){if(state.user.role!=='admin')return;$('#pageUsers').innerHTML=pageHead('ADMINISTRATION','People & Access','Create accounts and manage who can edit or view events.','<button class="primary" id="newUser">+ Add user</button>')+'<div class="card" id="usersContent">Loading team…</div>';$('#newUser').onclick=()=>userDialog();act(async()=>{const x=await api('/api/users');$('#usersContent').innerHTML='<div class="card-title"><h3>Team members</h3><span class="muted">'+x.users.length+' accounts</span></div>'+x.users.map(u=>'<div class="user-row"><span><b>'+esc(u.name)+'</b><small>@'+esc(u.username)+' · '+esc(u.role)+' · '+(u.active?'Active':'Disabled')+'</small></span><button class="secondary" data-user="'+esc(u.id)+'">Manage</button></div>').join('');$$('[data-user]','#usersContent').forEach(el=>el.onclick=()=>userDialog(x.users.find(u=>u.id===el.dataset.user)))})}
 function userDialog(u){
