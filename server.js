@@ -89,7 +89,7 @@ const byEvent = id => db.events.find(e => e.id === id);
 const eventPrograms = id => db.programs.filter(p => p.eventId === id).sort((a,b) => a.order - b.order);
 const eventAwards = id => db.awards.filter(a => a.eventId === id).sort((a,b) => a.order - b.order);
 const ISO = () => new Date().toISOString();
-const liveElapsed = (p, now = time()) => Math.max(0, Number(p.elapsedSeconds)||0) + (p.status==='running' && p.resumedAt ? Math.max(0,(now-Date.parse(p.resumedAt))/1000) : 0);
+const liveElapsed = (p, now = time()) => Math.max(0, Number(p.elapsedSeconds)||0) + (p.status==='running' && (p.resumedAt || (p.elapsedSeconds===undefined && p.actualStart)) ? Math.max(0,(now-Date.parse(p.resumedAt || p.actualStart))/1000) : 0);
 const awardInput = b => {
   const category=String(b.category||'').trim().slice(0,100);
   const awardName=String(b.awardName||'').trim().slice(0,160);
