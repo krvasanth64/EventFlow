@@ -1,0 +1,13 @@
+{
+  "name": "eventflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portable JSON-powered event planning and live show control",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
