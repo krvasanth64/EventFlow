@@ -11,7 +11,7 @@ test('live awards selectors, skipped restore UI, and V1.4.3 asset wiring contrac
  const server=read('server.js');
  for(const name of ['edit','done','pending']){
   assert.ok(awards.includes("$$('[data-award-"+name+"]',list).forEach("),'award action uses list selector '+name);
-  assert.ok(!awards.includes("$('[data-award-"+name+"]',list).forEach("),'no nullable single-node forEach '+name);
+  assert.ok(!awards.split('\n').some(line=>line.trimStart().startsWith("$('[data-award-"+name+"]',list).forEach(")),'no nullable single-node forEach '+name);
  }
  assert.ok(awards.includes('application/x-eventflow-award'),'drag/drop uses distinct award MIME key');
  assert.ok(skipped.includes('ef15SkippedPanel'),'separate skipped panel is installed');
