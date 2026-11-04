@@ -193,6 +193,8 @@ const server = http.createServer(async (req,res) => {
       }
       if (action==='media' && req.method==='POST') {
         requireEditor(user,id,req);
+        const expectedRevision=Number(url.searchParams.get('revision'));
+        if(!Number.isSafeInteger(expectedRevision)||expectedRevision!==e.revision) fail(409,'The event changed during upload. Refresh and retry.');
         const programId=url.searchParams.get('program');
         const p=db.programs.find(p=>p.id===programId&&p.eventId===id);
         if(!p) fail(404,'Program not found.');
@@ -200,7 +202,7 @@ const server = http.createServer(async (req,res) => {
         const ext=path.extname(raw).toLowerCase();
         if(!['.mp3','.mp4','.webm','.wav','.ogg','.m4a','.mov'].includes(ext)) fail(400,'Unsupported audio/video extension.');
         const length=Number(req.headers['content-length']);
-        if(!Number.isFinite(length)||length<1||length>MAX_UPLOAD) fail(413,'Upload must have a valid Content-Length and fit within size limit.');
+        if(!Number.isSafeInteger(length)||length<1||length>MAX_UPLOAD) fail(413,'Upload must have a valid Content-Length and fit within size limit.');
         const folder=path.join(MEDIA,id);fs.mkdirSync(folder,{recursive:true});
         const fileName=safe(p.id.slice(0,8)+'_'+p.title)+ext;const target=path.join(folder,fileName);const temp=target+'.part-'+uid();
         let size=0;
@@ -211,6 +213,9 @@ const server = http.createServer(async (req,res) => {
             req.on('error',reject);out.on('error',reject);out.on('finish',resolve);req.pipe(out);
           });
           if(size!==length) fail(400,'Incomplete upload.');
+          // A parallel request may have changed the event while data was streaming.
+          requireEditor(user,id,req);
+          if(expectedRevision!==e.revision) fail(409,'The event changed during upload. Refresh and retry.');
           fs.renameSync(temp,target);
         } finally { if(fs.existsSync(temp)) fs.unlinkSync(temp); }
         p.sourceType='file';p.source=path.relative(MEDIA,target).replace(/\\/g,'/');p.sourceName=raw.slice(0,255);e.revision++;audit('media.uploaded',user,id,p.title);persist();broadcast(id);
@@ -285,7 +290,12 @@ const server = http.createServer(async (req,res) => {
     if(route==='/api/stream') {
       need(user);
       res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
-      res.write(': connected\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
+      res.write('event: ready\ndata: {"connected":true}\n\n');
+      clients.add(res);
+      // IncomingMessage 'close' may fire as soon as the request is fully received.
+      // Track the response lifetime, otherwise event subscribers vanish immediately.
+      res.on('close',()=>clients.delete(res));
+      return;
     }
     const mediaMatch=/^\/media\/([a-f0-9-]+)\/([a-zA-Z0-9._-]+)$/.exec(route);
     if(mediaMatch&&['GET','HEAD'].includes(req.method)) {
