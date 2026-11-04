@@ -7,7 +7,8 @@ let v12LiveAwardFilter='';
 function v12RenderLiveAwards(){
  const c=current(),list=$('#v12LiveAwards');if(!c||!list)return;
  const awards=(c.awards||[]).filter(a=>!v12LiveAwardFilter||a.category===v12LiveAwardFilter);
- list.innerHTML=awards.map((a,i)=>'<div class="v12-live-row"><span class="program-num">'+(a.order+1)+'</span>'+
+ list.innerHTML=awards.map(a=>'<div class="v12-live-row" data-award-id="'+esc(a.id)+'" draggable="'+(efCanOperate()&&a.status!=='presented')+'">'+
+ '<span class="grip" title="Drag award to reorder">⠿</span><span class="program-num">'+(a.order+1)+'</span>'+
  '<div class="v12-live-info"><strong>'+esc(a.awardName)+' — '+esc(a.winnerName)+'</strong>'+
  '<small>'+esc(a.category||'General')+' · '+esc(a.employeeName||'')+' · '+esc(a.contact||'No contact')+'</small>'+
  '<small>Presented by: '+esc(a.presenter||'Unassigned')+'</small></div>'+
@@ -15,9 +16,38 @@ function v12RenderLiveAwards(){
  (efCanOperate()?'<div class="v12-row-actions">'+(efCanEdit()?'<button data-award-edit="'+esc(a.id)+'">Edit</button>':'')+
  (a.status!=='presented'?'<button data-award-done="'+esc(a.id)+'">Mark presented</button>':'<button data-award-pending="'+esc(a.id)+'">Reopen</button>')+'</div>':'')+
  '</div>').join('')||'<div class="empty"><strong>No awards for this category</strong>Choose another category or add an award.</div>';
- $('[data-award-edit]',list).forEach(b=>b.onclick=()=>efAwardModal((c.awards||[]).find(a=>a.id===b.dataset.awardEdit)));
- $('[data-award-done]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardDone),'presented'));
- $('[data-award-pending]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardPending),'pending'));
+ $$('[data-award-edit]',list).forEach(b=>b.onclick=()=>efAwardModal((c.awards||[]).find(a=>a.id===b.dataset.awardEdit)));
+ $$('[data-award-done]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardDone),'presented'));
+ $$('[data-award-pending]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardPending),'pending'));
+ if(!efCanOperate())return;
+ const all=c.awards||[];
+ const reorder=(from,to)=>act(async()=>{
+  const moving=all.find(a=>a.id===from),target=all.find(a=>a.id===to);
+  if(!moving||!target||from===to)return;
+  if(moving.status==='presented'||target.status==='presented')return toast('Presented awards stay in their completed position.');
+  const ids=all.map(a=>a.id);
+  ids.splice(ids.indexOf(from),1);ids.splice(ids.indexOf(to),0,from);
+  const next=await api('/api/events/'+c.event.id+'/awards/reorder','POST',{revision:c.event.revision,ids});
+  state.current=next;renderLive();toast('Award running order saved.');
+ });
+ [...list.querySelectorAll('[data-award-id]')].forEach(row=>{
+  const award=all.find(a=>a.id===row.dataset.awardId);if(!award||award.status==='presented')return;
+  row.addEventListener('dragstart',ev=>{
+   ev.dataTransfer.effectAllowed='move';
+   ev.dataTransfer.setData('application/x-eventflow-award',award.id);
+   row.classList.add('ef13-dragging');
+  });
+  row.addEventListener('dragend',()=>row.classList.remove('ef13-dragging'));
+  row.addEventListener('dragover',ev=>{ev.preventDefault();ev.dataTransfer.dropEffect='move';row.classList.add('ef13-drop-target')});
+  row.addEventListener('dragleave',()=>row.classList.remove('ef13-drop-target'));
+  row.addEventListener('drop',ev=>{ev.preventDefault();row.classList.remove('ef13-drop-target');const from=ev.dataTransfer.getData('application/x-eventflow-award');if(from)reorder(from,award.id)});
+  const actions=row.querySelector('.v12-row-actions');if(!actions)return;
+  for(const [direction,delta] of [['up',-1],['down',1]]){
+   const button=document.createElement('button');button.type='button';button.textContent=delta<0?'↑':'↓';button.title='Move award '+direction;
+   button.onclick=()=>{const index=all.findIndex(a=>a.id===award.id),target=all[index+delta];if(target)reorder(award.id,target.id)};
+   actions.prepend(button);
+  }
+ });
 }
 
 const v12Url=source=>'/media/'+String(source).split('/').map(encodeURIComponent).join('/');
