@@ -17,5 +17,6 @@ jobs:
           node --check server.js
           node --check public/app.js
           node --check public/extensions.js
+          node --check public/v12.js
       - name: API integration tests
         run: npm test
