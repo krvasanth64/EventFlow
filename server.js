@@ -373,7 +373,19 @@ const server = http.createServer(async (req,res) => {
         requireLiveOperator(user,id);const b=await jsonBody(req);revision(b,e);
         const current=eventPrograms(id);const ids=b.ids;
         if(!Array.isArray(ids)||ids.length!==current.length||new Set(ids).size!==ids.length||!ids.every(x=>current.some(p=>p.id===x))) fail(400,'The order must contain every program exactly once.');
-        // Live order may change freely: actual program timestamps and IDs remain authoritative.
+        // Moving a pending program ahead of the on-air program is an explicit skip,
+        // never an implicit consequence of an ordinary reorder request.
+        const active=current.find(p=>['running','paused'].includes(p.status));
+        const activeIndex=active?ids.indexOf(active.id):-1;
+        const skipBefore=activeIndex<0?[]:ids.slice(0,activeIndex).map(pid=>current.find(p=>p.id===pid))
+          .filter(p=>['pending','ready','stopped'].includes(p.status));
+        if(skipBefore.length && b.skipBeforeActive!==true)
+          fail(409,'Moving pending programs ahead of the live program requires confirmation to skip them.');
+        const now=ISO();
+        for(const item of skipBefore){
+          item.status='skipped';item.actualEnd=now;item.resumedAt=null;
+          audit('live.skip.reorder',user,id,item.title);
+        }
         ids.forEach((pid,i)=>db.programs.find(p=>p.id===pid).order=i);
         e.revision++;audit('programs.reordered',user,id);persist();broadcast(id);
         return send(res,200,eventResponse(id,user,req));
