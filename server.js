@@ -12,6 +12,7 @@ const BACKUPS = path.join(ROOT, 'backups');
 const PUBLIC = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
+const APP_VERSION = '1.2.0';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
 const SESSION_AGE = 12 * 3600 * 1000;
 const LEASE_MS = 90 * 1000;
@@ -163,7 +164,7 @@ const server = http.createServer(async (req,res) => {
     const url = new URL(req.url,'http://localhost');
     const route = url.pathname;
     const user = userOf(req);
-    if (route === '/api/health') return send(res,200,{ ok:true, users:db.users.length, revision:db.revision });
+    if (route === '/api/health') return send(res,200,{ ok:true, version:APP_VERSION, host:HOST, users:db.users.length, revision:db.revision });
     if (route === '/api/login' && req.method==='POST') {
       const body = await jsonBody(req);
       const u = db.users.find(u => u.username.toLowerCase() === String(body.username || '').toLowerCase() && u.active);
