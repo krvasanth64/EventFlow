@@ -2,6 +2,22 @@
 
 Last updated: 2026-11-04. Target: stable Windows-hosted, Tailscale-accessible event production app.
 
+## User-accepted V1 functions (2026-11-04)
+
+All nine functional acceptance checks **passed on the user's devices**:
+
+1. Five programs with different durations and gaps.
+2. Reordering with correct recalculated start/end.
+3. MP3 upload and preview.
+4. MP4 upload, preview, and seeking.
+5. Tailscale mobile media playback.
+6. Same event: one editor only.
+7. Separate events: simultaneous independent editors.
+8. Live start, finish, and skip actions.
+9. A4 agenda PDF with source references.
+
+**V1.1 expansion (code published, acceptance pending):** On-air preview and Play/Pause/Resume/Stop controls; live event delay-adjusted forecasts; separate award-winner planning with independent order, statuses and PDF. See [V1.1 detail](V1.1-ON-AIR-AWARDS.md). Automated API tests for live and awards passed.
+
 ## Verified
 
 | Area | Status | Evidence |
@@ -31,14 +47,14 @@ Last updated: 2026-11-04. Target: stable Windows-hosted, Tailscale-accessible ev
 - [x] Verify header event picker, event availability, Planner and Reports selection. Live Control route remains included in second-stage device testing.
 - [x] Verify Team & Access Manage button opens without a JS error.
 - [ ] Create 5 programs of different types. Single speech with no media: **passed**.
-- [ ] Drag/drop and move up/down; check calculated program start/end, duration and changeover gaps.
-- [ ] Upload MP3 and MP4; confirm preview/seek from desktop and mobile over Tailscale.
+- [x] Drag/drop and move up/down; check calculated program start/end, duration and changeover gaps (user confirmed).
+- [x] Upload MP3 and MP4; preview/seek from desktop and mobile over Tailscale (user confirmed).
 - [ ] Register web URL; verify external link and fallback for sites preventing embed.
-- [ ] Confirm full event agenda PDF via browser Print > Save as PDF, including media references.
-- [ ] Two users: one editor for Event A, view-only on Event A for second user.
-- [ ] Two users: second editor on Event B at same time; both changes persisted.
+- [x] Confirm full event agenda PDF via browser Print > Save as PDF, including media references (user confirmed).
+- [x] Two users: one editor for Event A, view-only on Event A for second user (user confirmed).
+- [x] Two users: second editor on Event B at same time; both changes persisted (user confirmed).
 - [ ] Admin takeover, editor lease expiry, stale-revision rejection, no lost updates.
-- [ ] Run live controls start/finish/skip and confirm actual timestamps survive restart.
+- [ ] Run live controls start/finish/skip (passed in user functional test); verify timestamps survive server restart.
 - [ ] Test small mobile portrait screens: forms, navigation, event selector, buttons.
 - [ ] Copy runtime folder backup and verify restore on isolated test host.
 - [ ] Change initial admin password to a nontrivial value; do not store secrets in repo.
