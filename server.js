@@ -12,7 +12,7 @@ const BACKUPS = path.join(ROOT, 'backups');
 const PUBLIC = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
 const SESSION_AGE = 12 * 3600 * 1000;
 const LEASE_MS = 90 * 1000;
@@ -31,7 +31,39 @@ function checkPassword(password, stored) {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   } catch { return false; }
 }
-const fresh = () => ({ version: 1, revision: 0, users: [], events: [], programs: [], history: [] });
+const defaultCatalogs = () => ({
+ programTypes: ['Solo Dance','Group Dance','Drama','Magic Show','Stand-up Comedy','Speech','Karaoke Singing','Solo Singing','Group Singing','Instrumental Music','DJ Performance','Mime','Awards Ceremony','Welcome Address','Vote of Thanks','Other','speech','dance','music','video','ceremony','break','other'].map(name=>({name,enabled:true})),
+ programCategories: ['General','Cultural','Music','Dance','Speech','Entertainment','Awards','Ceremony','Break'].map(name=>({name,enabled:true})),
+ awardCategories: ['General','Excellence','Performance','Service','Team','Special Recognition'].map(name=>({name,enabled:true})),
+ awardTitles: ['Best Performer','Best Team','Long Service','Outstanding Achievement','Special Recognition'].map(name=>({name,enabled:true})),
+ presenters: ['Chief Guest','Managing Director','HR Head','Event Host'].map(name=>({name,enabled:true})),
+ mediaTypes: ['none','file','url','linked'].map(name=>({name,enabled:true}))
+});
+function cleanCatalogs(value){
+ const fallback=defaultCatalogs(),out={};
+ for(const key of Object.keys(fallback)){
+   const rows=Array.isArray(value?.[key])?value[key]:fallback[key];
+   if(rows.length>100)fail(400,'Too many catalog entries in '+key);
+   const seen=new Set();
+   out[key]=rows.map(row=>({
+     name:String(typeof row==='string'?row:row?.name||'').trim().slice(0,90),
+     enabled:typeof row==='string'?true:row?.enabled!==false
+   })).filter(x=>x.name&&!seen.has(x.name.toLowerCase())&&seen.add(x.name.toLowerCase()));
+   if(!out[key].length)out[key]=fallback[key];
+ }
+ return out;
+}
+function archiveSource(p,kind){
+ const script=kind==='script';
+ const source=script?p.scriptSource:p.sourceType==='file'?p.source:'';
+ if(source){
+   if(!Array.isArray(p.sourceArchive))p.sourceArchive=[];
+   p.sourceArchive.push({id:uid(),kind:script?'script':'media',path:source,name:script?p.scriptName:p.sourceName,archivedAt:ISO()});
+ }
+ if(script){p.scriptSource='';p.scriptName='';}
+ else {p.source='';p.sourceName='';p.sourceType='none';}
+}
+const fresh = () => ({ version: 1, revision: 0, users: [], events: [], programs: [], awards:[], history: [] });
 let db = fs.existsSync(DB) ? JSON.parse(fs.readFileSync(DB, 'utf8')) : fresh();
 // Backward-compatible additions: existing runtime/data.json requires no migration.
 if (!Array.isArray(db.awards)) db.awards = [];
@@ -129,7 +161,7 @@ function minutes(x) { const n = Number(x); return Number.isFinite(n) && n >= 0 &
 function validProgram(p) {
   if (!String(p.title || '').trim()) fail(400, 'Program title is required.');
   if (minutes(p.duration) === null || minutes(p.gap) === null) fail(400,'Duration and gap must be valid nonnegative seconds.');
-  if (!['speech','dance','music','video','ceremony','break','other'].includes(p.type)) fail(400,'Invalid program type.');
+  if (!String(p.type||'').trim()||String(p.type).length>90) fail(400,'Invalid program type.');
   if (!['none','file','url','linked'].includes(p.sourceType)) fail(400,'Invalid source type.');
   if (p.sourceType === 'url' && !/^https?:\/\//i.test(String(p.source || ''))) fail(400, 'Enter an http/https URL.');
 }
@@ -184,7 +216,7 @@ const server = http.createServer(async (req,res) => {
       need(user,['admin','editor']); const b=await jsonBody(req);
       if(!String(b.title||'').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.date||'')) || !/^\d{2}:\d{2}$/.test(String(b.start||''))) fail(400,'Title, date, and start time are required.');
       if(db.events.some(e=>e.title.toLowerCase()===b.title.trim().toLowerCase())) fail(409,'Event title must be unique.');
-      const e={id:uid(),title:b.title.trim().slice(0,120),date:b.date,start:b.start,venue:String(b.venue||'').slice(0,150),organizer:String(b.organizer||'').slice(0,150),description:String(b.description||'').slice(0,1200),status:'draft',revision:1, createdAt:new Date().toISOString()};
+      const e={id:uid(),catalogs:defaultCatalogs(),title:b.title.trim().slice(0,120),date:b.date,start:b.start,venue:String(b.venue||'').slice(0,150),organizer:String(b.organizer||'').slice(0,150),description:String(b.description||'').slice(0,1200),status:'draft',revision:1, createdAt:new Date().toISOString()};
       db.events.push(e); audit('event.created',user,e.id,e.title);persist();broadcast(e.id);return send(res,201,{event:e});
     }
     const eventMatch = /^\/api\/events\/([a-f0-9-]+)(?:\/(.*))?$/.exec(route);
@@ -220,7 +252,7 @@ const server = http.createServer(async (req,res) => {
         const length=Number(req.headers['content-length']);
         if(!Number.isSafeInteger(length)||length<1||length>MAX_UPLOAD) fail(413,'Upload must have a valid Content-Length and fit within size limit.');
         const folder=path.join(MEDIA,id);fs.mkdirSync(folder,{recursive:true});
-        const fileName=safe(p.id.slice(0,8)+'_'+(isScript?'script_':'')+p.title)+ext;const target=path.join(folder,fileName);const temp=target+'.part-'+uid();
+        const fileName=safe(p.id.slice(0,8)+'_'+(isScript?'script_':'')+p.title+'_'+uid().slice(0,8))+ext;const target=path.join(folder,fileName);const temp=target+'.part-'+uid();
         let size=0;
         try {
           await new Promise((resolve,reject)=>{
@@ -234,7 +266,7 @@ const server = http.createServer(async (req,res) => {
           if(expectedRevision!==e.revision) fail(409,'The event changed during upload. Refresh and retry.');
           fs.renameSync(temp,target);
         } finally { if(fs.existsSync(temp)) fs.unlinkSync(temp); }
-        if(isScript){p.scriptSource=path.relative(MEDIA,target).replace(/\\/g,'/');p.scriptName=raw.slice(0,255);}else{p.sourceType='file';p.source=path.relative(MEDIA,target).replace(/\\/g,'/');p.sourceName=raw.slice(0,255);}e.revision++;audit(isScript?'script.uploaded':'media.uploaded',user,id,p.title);persist();broadcast(id);
+        if(isScript){if(p.scriptSource)archiveSource(p,'script');p.scriptSource=path.relative(MEDIA,target).replace(/\\/g,'/');p.scriptName=raw.slice(0,255);}else{if(p.sourceType==='file'&&p.source)archiveSource(p,'media');p.sourceType='file';p.source=path.relative(MEDIA,target).replace(/\\/g,'/');p.sourceName=raw.slice(0,255);}e.revision++;audit(isScript?'script.uploaded':'media.uploaded',user,id,p.title);persist();broadcast(id);
         return send(res,200,{program:p,revision:e.revision});
       }
       // Award plan is independent of the chronological program schedule.
@@ -314,7 +346,7 @@ const server = http.createServer(async (req,res) => {
         requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
         const current=eventPrograms(id);const ids=b.ids;
         if(!Array.isArray(ids)||ids.length!==current.length||new Set(ids).size!==ids.length||!ids.every(x=>current.some(p=>p.id===x))) fail(400,'The order must contain every program exactly once.');
-        if(e.status==='live' && current.some((p,i)=>['running','paused','done','skipped'].includes(p.status)&&ids[i]!==p.id)) fail(409,'Only upcoming programs may change positions while live. Completed and on-air slots stay fixed.');
+        // Live order may change freely: actual program timestamps and IDs remain authoritative.
         ids.forEach((pid,i)=>db.programs.find(p=>p.id===pid).order=i);
         e.revision++;audit('programs.reordered',user,id);persist();broadcast(id);
         return send(res,200,eventResponse(id,user,req));
@@ -325,6 +357,16 @@ const server = http.createServer(async (req,res) => {
         const p={id:uid(),eventId:id,order:eventPrograms(id).length,title:b.title.trim().slice(0,150),type:b.type,duration:Number(b.duration),gap:Number(b.gap),presenter:String(b.presenter||'').slice(0,120),category:String(b.category||'General').slice(0,100),...personFields(b),notes:String(b.notes||'').slice(0,1000),sourceType:b.sourceType,source:b.sourceType==='url'||b.sourceType==='linked'?String(b.source||'').slice(0,2000):'',actualStart:null,actualEnd:null,status:'pending'};
         db.programs.push(p);e.revision++;audit('program.created',user,id,p.title);persist();broadcast(id);return send(res,201,eventResponse(id,user,req));
       }
+      const archiveMatch=/^programs\/([a-f0-9-]+)\/archive$/.exec(action);
+      if(archiveMatch && req.method==='POST'){
+        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        const p=db.programs.find(x=>x.id===archiveMatch[1]&&x.eventId===id);
+        if(!p)fail(404,'Program not found.');
+        if(!['media','script'].includes(b.kind))fail(400,'Invalid archive kind.');
+        archiveSource(p,b.kind);
+        e.revision++;audit('source.archived',user,id,p.title+' '+b.kind);persist();broadcast(id);
+        return send(res,200,eventResponse(id,user,req));
+      }
       const programMatch=/^programs\/([a-f0-9-]+)$/.exec(action);
       if(programMatch && ['PATCH','DELETE'].includes(req.method)) {
         requireEditor(user,id,req);const p=db.programs.find(p=>p.id===programMatch[1]&&p.eventId===id);
@@ -333,6 +375,7 @@ const server = http.createServer(async (req,res) => {
         else {
           const changed={...p,...b};validProgram(changed);
           if(eventPrograms(id).some(x=>x.id!==p.id && x.title.toLowerCase()===changed.title.trim().toLowerCase())) fail(409,'Program title must be unique in this event.');
+          if(p.sourceType==='file'&&p.source&&changed.sourceType!=='file')archiveSource(p,'media');
           Object.assign(p,{title:changed.title.trim().slice(0,150),type:changed.type,duration:Number(changed.duration),gap:Number(changed.gap),presenter:String(changed.presenter||'').slice(0,120),category:String(changed.category||'General').slice(0,100),...personFields(changed),notes:String(changed.notes||'').slice(0,1000),sourceType:changed.sourceType,source:changed.sourceType==='url'||changed.sourceType==='linked'?String(changed.source||'').slice(0,2000):changed.sourceType==='file'?p.source:'',status:['pending','ready','running','done','skipped'].includes(changed.status)?changed.status:p.status,actualStart:changed.actualStart===undefined?p.actualStart:changed.actualStart,actualEnd:changed.actualEnd===undefined?p.actualEnd:changed.actualEnd});
           audit('program.updated',user,id,p.title);
         }
@@ -347,6 +390,7 @@ const server = http.createServer(async (req,res) => {
         }
         for(const f of ['date','start','venue','organizer','description']) if(b[f]!==undefined)e[f]=String(b[f]).slice(0,1200);
         if(b.status!==undefined&&['draft','ready','live','completed'].includes(b.status)) e.status=b.status;
+        if(b.catalogs!==undefined)e.catalogs=cleanCatalogs(b.catalogs);
         e.revision++;audit('event.updated',user,id);persist();broadcast(id);return send(res,200,eventResponse(id,user,req));
       }
       if(!action&&req.method==='DELETE'){
@@ -391,7 +435,7 @@ const server = http.createServer(async (req,res) => {
     if(mediaMatch&&['GET','HEAD'].includes(req.method)) {
       need(user);
       const relative=mediaMatch[1]+'/'+mediaMatch[2];
-      if(!db.programs.some(p=>(p.sourceType==='file'&&p.source===relative)||p.scriptSource===relative)) fail(404,'File not registered.');
+      if(!db.programs.some(p=>(p.sourceType==='file'&&p.source===relative)||p.scriptSource===relative||(p.sourceArchive||[]).some(a=>a.path===relative))) fail(404,'File not registered.');
       const file=path.join(MEDIA,relative);if(!fs.existsSync(file))fail(404,'Missing file.');
       return streamFile(req,res,file,true);
     }
