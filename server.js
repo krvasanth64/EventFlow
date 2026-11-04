@@ -12,7 +12,7 @@ const BACKUPS = path.join(ROOT, 'backups');
 const PUBLIC = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0-beta.1';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
 const SESSION_AGE = 12 * 3600 * 1000;
 const LEASE_MS = 90 * 1000;
@@ -145,6 +145,10 @@ function isEditor(user, id, token) {
   const lock = leaseOf(id);
   return user?.role === 'admin' && !lock ? false : !!(lock && lock.userId === user?.id && lock.token === token);
 }
+function requireLiveOperator(user, id) {
+  need(user, ['admin','editor','live_controller']);
+  if (!byEvent(id)) fail(404,'Event not found.');
+}
 function requireEditor(user, id, req) {
   need(user, ['admin','editor']);
   if (!byEvent(id)) fail(404,'Event not found.');
@@ -238,6 +242,27 @@ const server = http.createServer(async (req,res) => {
       if (action==='lease/renew' && req.method==='POST') {
         requireEditor(user,id,req); const l=leases.get(id);l.expires=time()+LEASE_MS;return send(res,200,{expires:l.expires});
       }
+      if (action==='export' && req.method==='GET') {
+        need(user,['admin','editor']);
+        const snapshot={format:'EventFlow-event-json',version:1,exportedAt:ISO(),
+          event:e,programs:eventPrograms(id),awards:eventAwards(id),
+          notice:'Media binaries are not included. Use a complete runtime backup for recovery.'};
+        const body=JSON.stringify(snapshot,null,2);
+        return send(res,200,body,{'Content-Type':'application/json; charset=utf-8',
+          'Content-Disposition':'attachment; filename="'+safe(e.title)+'_'+id.slice(0,8)+'.json"'});
+      }
+      const downloadMatch=/^programs\\/([a-f0-9-]+)\\/download$/.exec(action);
+      if(downloadMatch && req.method==='GET'){
+        need(user,['admin','editor','live_controller']);
+        const p=db.programs.find(x=>x.id===downloadMatch[1]&&x.eventId===id);
+        if(!p||p.sourceType!=='file'||!p.source)fail(404,'Uploaded media not available.');
+        const file=path.resolve(MEDIA,p.source);
+        if(!file.startsWith(path.resolve(MEDIA)+path.sep)||!fs.existsSync(file))fail(404,'Media file missing.');
+        const ext=path.extname(file).toLowerCase();
+        const filename=safe(p.title)+'_'+p.id.slice(0,8)+ext;
+        res.setHeader('Content-Disposition','attachment; filename="'+filename+'"');
+        return streamFile(req,res,file,true);
+      }
       if (action==='media' && req.method==='POST') {
         requireEditor(user,id,req);
         const expectedRevision=Number(url.searchParams.get('revision'));
@@ -278,7 +303,7 @@ const server = http.createServer(async (req,res) => {
         persist();broadcast(id);return send(res,201,eventResponse(id,user,req));
       }
       if (action==='awards/reorder' && req.method==='POST') {
-        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        requireLiveOperator(user,id);const b=await jsonBody(req);revision(b,e);
         const awards=eventAwards(id);
         if(!Array.isArray(b.ids)||b.ids.length!==awards.length||new Set(b.ids).size!==b.ids.length||
           !b.ids.every(x=>awards.some(a=>a.id===x)))fail(400,'Award order must include every award exactly once.');
@@ -288,7 +313,9 @@ const server = http.createServer(async (req,res) => {
       }
       const awardMatch=/^awards\/([a-f0-9-]+)$/.exec(action);
       if(awardMatch && ['PATCH','DELETE'].includes(req.method)) {
-        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        const b=await jsonBody(req);revision(b,e);
+        if(req.method==='PATCH' && Object.keys(b).every(k=>['revision','status'].includes(k))) requireLiveOperator(user,id);
+        else requireEditor(user,id,req);
         const a=db.awards.find(x=>x.eventId===id&&x.id===awardMatch[1]);if(!a)fail(404,'Award not found.');
         if(req.method==='DELETE'){
           db.awards=db.awards.filter(x=>x.id!==a.id);
@@ -306,7 +333,7 @@ const server = http.createServer(async (req,res) => {
         e.revision++;persist();broadcast(id);return send(res,200,eventResponse(id,user,req));
       }
       if (action==='live' && req.method==='POST') {
-        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        requireLiveOperator(user,id);const b=await jsonBody(req);revision(b,e);
         const programs=eventPrograms(id);
         const p=programs.find(x=>x.id===b.programId);if(!p)fail(404,'Program not found.');
         const actionName=String(b.action||'');
@@ -343,7 +370,7 @@ const server = http.createServer(async (req,res) => {
         return send(res,200,eventResponse(id,user,req));
       }
       if (action==='reorder' && req.method==='POST') {
-        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
+        requireLiveOperator(user,id);const b=await jsonBody(req);revision(b,e);
         const current=eventPrograms(id);const ids=b.ids;
         if(!Array.isArray(ids)||ids.length!==current.length||new Set(ids).size!==ids.length||!ids.every(x=>current.some(p=>p.id===x))) fail(400,'The order must contain every program exactly once.');
         // Live order may change freely: actual program timestamps and IDs remain authoritative.
@@ -406,7 +433,7 @@ const server = http.createServer(async (req,res) => {
         const username=String(b.username||'').trim();
         if(!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)||String(b.password||'').length<8) fail(400,'Username must be 3–32 safe characters; password must be at least 8 characters.');
         if(db.users.some(u=>u.username.toLowerCase()===username.toLowerCase())) fail(409,'Username already exists.');
-        if(!['admin','editor','viewer'].includes(b.role)) fail(400,'Invalid role.');
+        if(!['admin','editor','live_controller','viewer'].includes(b.role)) fail(400,'Invalid role.');
         const u={id:uid(),username,name:String(b.name||username).slice(0,100),password:hash(b.password),role:b.role,active:true};
         db.users.push(u);audit('user.created',user,null,username);persist();return send(res,201,{user:publicUser(u)});
       }
@@ -415,7 +442,7 @@ const server = http.createServer(async (req,res) => {
     if(uMatch&&req.method==='PATCH'){
       need(user,['admin']);const u=db.users.find(x=>x.id===uMatch[1]);if(!u)fail(404,'User not found.');
       const b=await jsonBody(req);
-      if(b.role!==undefined){if(!['admin','editor','viewer'].includes(b.role))fail(400,'Invalid role.');if(u.id===user.id&&b.role!=='admin')fail(400,'Cannot remove your own admin role.');u.role=b.role;}
+      if(b.role!==undefined){if(!['admin','editor','live_controller','viewer'].includes(b.role))fail(400,'Invalid role.');if(u.id===user.id&&b.role!=='admin')fail(400,'Cannot remove your own admin role.');u.role=b.role;}
       if(b.active!==undefined){if(u.id===user.id&&b.active===false)fail(400,'Cannot disable yourself.');u.active=!!b.active;}
       if(b.name!==undefined)u.name=String(b.name).slice(0,100);
       if(b.password!==undefined){if(String(b.password).length<8)fail(400,'Password requires at least 8 characters.');u.password=hash(b.password);}
