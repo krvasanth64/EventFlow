@@ -1,6 +1,6 @@
 'use strict';
 const $ = (s,root=document) => root.querySelector(s);
-const $$ = (s,root=document) => [...root.querySelectorAll(s)];
+const $ = (s,root=document) => [...(typeof root==='string' ? document.querySelector(root) : root)?.querySelectorAll(s) || []];
 const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const state={user:null,events:[],current:null,page:'dashboard',selected:null,editing:false,stream:null,clock:null,leaseTimer:null};
 const types=['speech','dance','music','video','ceremony','break','other'];
@@ -18,18 +18,43 @@ async function api(url,method='GET',body,opts={}) {const headers={};if(body!==un
 async function act(fn){try{await fn()}catch(e){toast(e.message)}}
 function showApp(){ $('#loginPage').classList.add('hidden');$('#app').classList.remove('hidden');$('#userName').textContent=state.user.name;$('#userAvatar').textContent=state.user.name.slice(0,1).toUpperCase();$$('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));$$('[data-page="planner"],[data-page="live"]').forEach(x=>x.classList.remove('hidden'));$('#dateNow').textContent=new Date().toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}); }
 function showLogin(){state.user=null;state.current=null;state.editing=false;state.stream?.close();clearInterval(state.leaseTimer);clearInterval(state.syncTimer);$('#app').classList.add('hidden');$('#loginPage').classList.remove('hidden')}
-async function initialize(){try{const r=await api('/api/me');state.user=r.user;showApp();await refreshEvents();navigate('dashboard');connectStream()}catch{showLogin()}}
-$('#loginForm').addEventListener('submit',e=>{e.preventDefault();act(async()=>{const f=new FormData(e.target);const x=await api('/api/login','POST',Object.fromEntries(f));state.user=x.user;showApp();await refreshEvents();navigate('dashboard');connectStream()})});
+async function restoreLastEvent(){
+  let id=null;try{id=localStorage.getItem('eventflow.activeEvent')}catch{}
+  const chosen=state.events.find(e=>e.id===id)||(state.events.length===1?state.events[0]:null);
+  if(chosen){try{await loadEvent(chosen.id,false)}catch{state.current=null}}
+  updateEventPicker();
+}
+async function initialize(){try{const r=await api('/api/me');state.user=r.user;showApp();await refreshEvents();await restoreLastEvent();navigate('dashboard');connectStream()}catch{showLogin()}}
+$('#loginForm').addEventListener('submit',e=>{e.preventDefault();act(async()=>{const f=new FormData(e.target);const x=await api('/api/login','POST',Object.fromEntries(f));state.user=x.user;showApp();await refreshEvents();await restoreLastEvent();navigate('dashboard');connectStream()})});
 $('#logout').onclick=()=>act(async()=>{await api('/api/logout','POST',{});showLogin()});
 $$('[data-page]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
 $('#closeModal').onclick=()=>$('#modal').close();
+$('#globalEventSelect').addEventListener('change',ev=>{
+  const id=ev.target.value;
+  if(id)selectEvent(id,state.page==='dashboard'?'planner':state.page);
+  else {state.current=null;state.selected=null;try{localStorage.removeItem('eventflow.activeEvent')}catch{};navigate('dashboard')}
+});
 function modal(title,html,setup,eyebrow='EVENTFLOW'){ $('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML=html;$('#modal').showModal();setup?.($('#modalBody')) }
 function closeModal(){$('#modal').close()}
 function navigate(page){if(page==='users'&&state.user.role!=='admin')return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',reports:'Reports',users:'Team & Access'}[page];render();}
-async function refreshEvents(){const x=await api('/api/events');state.events=x.events;}
-async function loadEvent(id,update=true){const x=await api('/api/events/'+id);state.current=x;state.editing=!!x.lock?.mine;if(update)render();}
+function updateEventPicker(){
+  const picker=$('#globalEventSelect');
+  if(!picker)return;
+  const currentId=state.current?.event?.id||'';
+  picker.innerHTML='<option value="">Choose an event</option>'+state.events.map(e=>'<option value="'+esc(e.id)+'">'+esc(e.title)+'</option>').join('');
+  picker.value=state.events.some(e=>e.id===currentId)?currentId:'';
+}
+async function refreshEvents(){const x=await api('/api/events');state.events=x.events;updateEventPicker();}
+async function loadEvent(id,update=true){const x=await api('/api/events/'+id);state.current=x;state.editing=!!x.lock?.mine;try{localStorage.setItem('eventflow.activeEvent',id)}catch{};updateEventPicker();if(update)render();}
 function selectEvent(id,page='planner'){return act(async()=>{await loadEvent(id,false);state.selected=null;navigate(page)})}
-async function syncWorkspace(){if(!state.user)return;await refreshEvents();if(state.current){try{await loadEvent(state.current.event.id,false)}catch(e){if(e.message==='Event not found.'){state.current=null;state.selected=null;state.page='dashboard';navigate('dashboard');return}throw e}}render()}
+function showEventChooser(page,title){
+  const target=$('#page'+titleCase(page));
+  target.innerHTML=pageHead('SELECT EVENT',title,'Choose an event to continue, or create one from Overview.')+
+  '<div class="event-grid">'+state.events.map(e=>'<button type="button" class="event-card event-choice" data-choose="'+esc(e.id)+'"><span class="tag '+esc(e.status)+'">'+esc(e.status)+'</span><h3>'+esc(e.title)+'</h3><div class="event-meta">'+esc(e.date)+' · '+esc(e.start)+'</div><div class="event-foot"><b>Open event →</b></div></button>').join('')+'</div>'+
+  (!state.events.length?'<div class="empty"><strong>No events registered</strong>Go to Overview to create your first event.</div>':'');
+  $('[data-choose]',target).forEach(b=>b.onclick=()=>selectEvent(b.dataset.choose,page));
+}
+async function syncWorkspace(){if(!state.user)return;await refreshEvents();if(state.current){try{await loadEvent(state.current.event.id,false)}catch(e){if(e.message==='Event not found.'){state.current=null;state.selected=null;try{localStorage.removeItem('eventflow.activeEvent')}catch{};updateEventPicker();state.page='dashboard';navigate('dashboard');return}throw e}}render()}
 function connectStream(){
   state.stream?.close();
   clearInterval(state.leaseTimer);
@@ -67,7 +92,7 @@ function banner(){const c=current();if(!c)return '';const can=state.user.role!==
 function editorButtons(){if(state.user.role==='viewer')return '';return state.editing?'<button class="secondary" id="releaseEditor">Release Editing</button>':current()?.lock?state.user.role==='admin'?'<button class="secondary" id="takeEditor">Take Over Editing</button>':'':'<button class="primary" id="getEditor">✎ Edit This Event</button>'}
 function wireLock(){ $('#getEditor')?.addEventListener('click',()=>acquire());$('#takeEditor')?.addEventListener('click',()=>{if(confirm('Take editing control from the current user?'))acquire(true)});$('#releaseEditor')?.addEventListener('click',release)}
 function renderPlanner(){
-const c=current();if(!c){$('#pagePlanner').innerHTML=pageHead('PROGRAM PLANNER','Choose an event','Select an event from the overview.')+'<button class="secondary" onclick="window.EventFlow.goHome()">View events</button>';return}
+const c=current();if(!c){showEventChooser('planner','Choose an event to plan');return}
 const e=c.event,programs=c.programs,scheduled=schedule(e,programs),total=(finalTime(e,programs)-new Date(e.date+'T'+e.start+':00').getTime())/1000;
 $('#pagePlanner').innerHTML=pageHead('EVENT PLANNER',esc(e.title),esc(e.date)+' · '+esc(e.venue||'Venue not set'),'<button class="secondary" id="switchEvent">Change Event</button>'+(state.editing?'<button class="secondary" id="editEvent">Event Settings</button>':'')+editorButtons())+banner()+
 '<div class="stats">'+stat('Programs',programs.length,'Registered in the agenda')+stat('Running time',duration(programs.reduce((s,p)=>s+p.duration,0)),'Program durations only')+stat('Changeover time',duration(programs.reduce((s,p,i)=>s+(i===programs.length-1?0:p.gap),0)),'Transitions between programs')+stat('Expected finish',hhmm(finalTime(e,programs)),'Total '+duration(total))+'</div>'+
@@ -104,7 +129,7 @@ modal(p?'Edit Program':'Add Program','<form id="programForm"><div class="form-gr
 },'RUNNING ORDER');
 }
 function renderLive(){
-const c=current();if(!c){$('#pageLive').innerHTML=pageHead('SHOW CONTROL','Live Operation','Open an event from the overview first.');return}
+const c=current();if(!c){showEventChooser('live','Choose an event for live control');return}
 const e=c.event,arr=c.programs,now=arr.find(p=>p.status==='running')||arr.find(p=>p.status!=='done'&&p.status!=='skipped'),idx=arr.indexOf(now),next=arr.slice(idx+1).find(p=>p.status!=='done'&&p.status!=='skipped');
 $('#pageLive').innerHTML=pageHead('LIVE EVENT CONTROL',esc(e.title),'Operate the event in real time.',editorButtons())+banner()+
 '<div class="live-board"><span class="tag live">'+(e.status==='live'?'● ON AIR':'● '+esc(e.status.toUpperCase()))+'</span><p class="live-sub" style="margin-top:23px">CURRENT PROGRAM · '+(idx+1)+' OF '+arr.length+'</p><h2 class="live-current">'+esc(now?.title||'All programs finished')+'</h2><div class="live-clock" id="runningClock">'+(now?duration(now.duration):'00:00')+'</div><p class="live-sub">Next up: '+esc(next?.title||'End of event')+'</p><div class="live-progress"><span id="runningProgress" style="width:0%"></span></div><div class="live-controls">'+(state.editing&&now?'<button id="startLive" class="primary">▶ '+(now.status==='running'?'Running':'Start Program')+'</button><button id="finishLive">✓ Finish & Next</button><button id="skipLive">↷ Skip</button>':'<span class="live-sub">Take editing control to operate the event.</span>')+'</div></div>'+
@@ -126,7 +151,7 @@ el.innerHTML='<h1>'+esc(e.title)+'</h1><p>'+esc(e.date)+' · Starts '+esc(e.star
 document.body.append(el);window.addEventListener('afterprint',()=>el.remove(),{once:true});window.print();
 }
 function renderReports(){
-const c=current();$('#pageReports').innerHTML=pageHead('EXPORT & REPORTS','Event reports','Generate a clean print-ready running order with source references.','<button class="primary" id="printReport" '+(!c?'disabled':'')+'>▧ Print / Save as PDF</button>')+(c?'<div class="card report-preview"><div class="card-title"><h3>'+esc(c.event.title)+'</h3><span class="muted">'+c.programs.length+' programs</span></div><table><thead><tr><th>#</th><th>Program</th><th>Start</th><th>End</th><th>Duration</th><th>Source</th></tr></thead><tbody>'+schedule(c.event,c.programs).map(p=>'<tr><td>'+(p.index+1)+'</td><td>'+esc(p.title)+'</td><td>'+hhmm(p.plannedStart)+'</td><td>'+hhmm(p.plannedEnd)+'</td><td>'+duration(p.duration)+'</td><td>'+esc(p.sourceType)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty"><strong>Select an event</strong>Open an event from the Overview to export its agenda.</div>');
+const c=current();if(!c){showEventChooser('reports','Choose an event for reports');return}$('#pageReports').innerHTML=pageHead('EXPORT & REPORTS','Event reports','Generate a clean print-ready running order with source references.','<button class="primary" id="printReport" '+(!c?'disabled':'')+'>▧ Print / Save as PDF</button>')+(c?'<div class="card report-preview"><div class="card-title"><h3>'+esc(c.event.title)+'</h3><span class="muted">'+c.programs.length+' programs</span></div><table><thead><tr><th>#</th><th>Program</th><th>Start</th><th>End</th><th>Duration</th><th>Source</th></tr></thead><tbody>'+schedule(c.event,c.programs).map(p=>'<tr><td>'+(p.index+1)+'</td><td>'+esc(p.title)+'</td><td>'+hhmm(p.plannedStart)+'</td><td>'+hhmm(p.plannedEnd)+'</td><td>'+duration(p.duration)+'</td><td>'+esc(p.sourceType)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty"><strong>Select an event</strong>Open an event from the Overview to export its agenda.</div>');
 $('#printReport')?.addEventListener('click',printSheet);
 }
 function renderUsers(){if(state.user.role!=='admin')return;$('#pageUsers').innerHTML=pageHead('ADMINISTRATION','People & Access','Create accounts and manage who can edit or view events.','<button class="primary" id="newUser">+ Add user</button>')+'<div class="card" id="usersContent">Loading team…</div>';$('#newUser').onclick=()=>userDialog();act(async()=>{const x=await api('/api/users');$('#usersContent').innerHTML='<div class="card-title"><h3>Team members</h3><span class="muted">'+x.users.length+' accounts</span></div>'+x.users.map(u=>'<div class="user-row"><span><b>'+esc(u.name)+'</b><small>@'+esc(u.username)+' · '+esc(u.role)+' · '+(u.active?'Active':'Disabled')+'</small></span><button class="secondary" data-user="'+esc(u.id)+'">Manage</button></div>').join('');$$('[data-user]','#usersContent').forEach(el=>el.onclick=()=>userDialog(x.users.find(u=>u.id===el.dataset.user)))})}
