@@ -124,7 +124,7 @@ function eventResponse(id, user, req) {
   return { event:e, programs:eventPrograms(id), history:db.history.filter(h => h.eventId === id).slice(0,30),
     lock: lock ? { user:db.users.find(u => u.id===lock.userId)?.name || 'Unknown', mine:isEditor(user,id,cookie(req,'ef_session')), expires:lock.expires } : null };
 }
-const mime = ext => ({ '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.mp3':'audio/mpeg','.mp4':'video/mp4','.webm':'video/webm','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.mov':'video/quicktime','.pdf':'application/pdf' })[ext] || 'application/octet-stream';
+const mime = ext => ({ '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.mp3':'audio/mpeg','.mp4':'video/mp4','.webm':'video/webm','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.mov':'video/quicktime','.pdf':'application/pdf','.webmanifest':'application/manifest+json' })[ext] || 'application/octet-stream';
 function streamFile(req, res, file, allowRange=false) {
   const stat = fs.statSync(file); const type = mime(path.extname(file).toLowerCase());
   const h = { 'Content-Type':type, 'Accept-Ranges': allowRange ? 'bytes':'none', 'X-Content-Type-Options':'nosniff' };
