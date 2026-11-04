@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { URL } = require('node:url');
+const {streamZip,mediaFiles}=require('./zip');
 
 const ROOT = path.resolve(process.env.EVENTFLOW_DATA || path.join(__dirname, 'runtime'));
 const DB = path.join(ROOT, 'data.json');
@@ -214,6 +215,19 @@ const server = http.createServer(async (req,res) => {
       for(const [id,l] of leases) if(l.token===cookie(req,'ef_session')) { leases.delete(id); broadcast(id); }
       return send(res,200,{ok:true},{'Set-Cookie':'ef_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'});
     }
+    if (route === '/api/backup/full' && req.method==='GET') {
+      need(user,['admin']);
+      const files=mediaFiles(MEDIA).map(x=>({name:'media/'+x.name,file:x.file}));
+      const oldCopies=mediaFiles(BACKUPS).map(x=>({name:'backups/'+x.name,file:x.file}));
+      const snapshot=JSON.stringify(db,null,2);
+      const entries=[
+        {name:'data.json',content:snapshot},
+        {name:'BACKUP_README.txt',content:'EventFlow complete runtime backup. PRIVATE: contains password hashes and user information.\\nStop the server before restoring. Extract data.json and media/ into EVENTFLOW_DATA. Do not commit backup to GitHub.\\n'},
+        ...files,...oldCopies
+      ];
+      const stamp=ISO().replace(/[:.]/g,'-');
+      return await streamZip(res,entries,'EventFlow_FULL_'+stamp+'.zip');
+    }
     if (route === '/api/me') { need(user); return send(res,200,{user:publicUser(user), settings:{port:PORT, mediaRoot:MEDIA}}); }
     if (route === '/api/events' && req.method==='GET') { need(user); return send(res,200,{events:db.events.map(e=>({...e,programCount:eventPrograms(e.id).length})).sort((a,b)=>b.date.localeCompare(a.date))}); }
     if (route === '/api/events' && req.method==='POST') {
@@ -241,6 +255,44 @@ const server = http.createServer(async (req,res) => {
       }
       if (action==='lease/renew' && req.method==='POST') {
         requireEditor(user,id,req); const l=leases.get(id);l.expires=time()+LEASE_MS;return send(res,200,{expires:l.expires});
+      }
+      if (action==='dj-package' && req.method==='GET') {
+        need(user,['admin','editor','live_controller']);
+        const programs=eventPrograms(id),awards=eventAwards(id);
+        const manifest={format:'EventFlow-DJ-package-v1',event:{id:e.id,title:e.title,date:e.date,start:e.start,venue:e.venue},createdAt:ISO(),programs:[],awards};
+        const entries=[],names=new Set();
+        let num=0;
+        for(const program of programs){
+          num++;
+          const item={id:program.id,title:program.title,order:num,status:program.status,type:program.type,
+            category:program.category,durationSeconds:program.duration,media:[],script:[],externalSource:null};
+          if(['url','linked'].includes(program.sourceType))item.externalSource={type:program.sourceType,reference:program.source};
+          const sources=[];
+          if(program.sourceType==='file'&&program.source)sources.push({kind:'media',ref:program.source,archived:false});
+          if(program.scriptSource)sources.push({kind:'script',ref:program.scriptSource,archived:false});
+          for(const a of program.sourceArchive||[])if(a.path)sources.push({kind:a.kind==='script'?'script':'media',ref:a.path,archived:true});
+          let seq=0;
+          for(const source of sources){
+            const candidate=path.resolve(MEDIA,source.ref);
+            if(!candidate.startsWith(path.resolve(MEDIA)+path.sep)||!fs.existsSync(candidate)||!fs.statSync(candidate).isFile())fail(409,'DJ package cannot be completed: missing source for '+program.title);
+            const ext=path.extname(candidate).toLowerCase(),name='DJ_Media/'+String(num).padStart(3,'0')+'_'+safe(program.title)+'_'+program.id.slice(0,8)+'_'+(++seq)+(source.archived?'_ARCHIVED':'')+ext;
+            if(names.has(name))fail(409,'Duplicate file name during export');
+            names.add(name);
+            entries.push({name,file:candidate});
+            item[source.kind].push({filename:name,archived:source.archived,originalSource:source.ref});
+          }
+          manifest.programs.push(item);
+        }
+        const csvCell=value=>'"'+String(value??'').replace(/"/g,'""').replace(/\\r?\\n/g,' ')+'"';
+        const columns=['Order','Program ID','Title','Status','Type','Duration (seconds)','Current media filename','External source'];
+        const csv=[columns.map(csvCell).join(','),...manifest.programs.map(p=>[p.order,p.id,p.title,p.status,p.type,p.durationSeconds,p.media.filter(x=>!x.archived).map(x=>x.filename).join('; '),p.externalSource?.reference||''].map(csvCell).join(','))].join('\\r\\n');
+        const contents=[
+          {name:'DJ_MANIFEST.json',content:JSON.stringify(manifest,null,2)},
+          {name:'DJ_RUNNING_ORDER.csv',content:csv},
+          {name:'README.txt',content:'EventFlow DJ package. Play media files from DJ_Media. External URLs and linked host paths are references only. Archived versions are named ARCHIVED.\\n'},
+          ...entries
+        ];
+        return await streamZip(res,contents,'DJ_'+safe(e.title)+'_'+id.slice(0,8)+'.zip');
       }
       if (action==='export' && req.method==='GET') {
         need(user,['admin','editor']);
