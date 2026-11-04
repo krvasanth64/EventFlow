@@ -36,7 +36,7 @@ $('#globalEventSelect').addEventListener('change',ev=>{
 });
 function modal(title,html,setup,eyebrow='EVENTFLOW'){ $('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML=html;$('#modal').showModal();setup?.($('#modalBody')) }
 function closeModal(){$('#modal').close()}
-function navigate(page){if(page==='users'&&state.user.role!=='admin')return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',reports:'Reports',users:'Team & Access'}[page];render();}
+function navigate(page){if(page==='users'&&state.user.role!=='admin')return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',users:'Team & Access'}[page];render();}
 function updateEventPicker(){
   const picker=$('#globalEventSelect');
   if(!picker)return;
@@ -72,7 +72,7 @@ function connectStream(){
 }
 function pageHead(kicker,title,subtitle,buttons=''){return '<div class="page-head"><div><div class="eyebrow">'+kicker+'</div><h1>'+title+'</h1><p>'+subtitle+'</p></div><div class="head-actions">'+buttons+'</div></div>'}
 function stat(label,value,foot){return '<div class="stat"><div class="stat-label">'+label+'</div><div class="stat-value">'+value+'</div><div class="stat-foot">'+foot+'</div></div>'}
-function render(){if(!state.user)return;const page=state.page;if(page==='dashboard')renderDashboard();if(page==='planner')renderPlanner();if(page==='live')renderLive();if(page==='reports')renderReports();if(page==='users')renderUsers();}
+function render(){if(!state.user)return;const page=state.page;if(page==='dashboard')renderDashboard();if(page==='planner')renderPlanner();if(page==='live')renderLive();if(page==='awards')renderAwards();if(page==='reports')renderReports();if(page==='users')renderUsers();}
 function renderDashboard(){
 const events=state.events,upcoming=events.filter(e=>e.status!=='completed'),live=events.filter(e=>e.status==='live'),prog=events.reduce((a,e)=>a+(e.programCount||0),0);
 $('#pageDashboard').innerHTML=pageHead('YOUR WORKSPACE','Good to see you, '+esc(state.user.name.split(' ')[0])+'.','Plan unforgettable events with precision.',state.user.role!=='viewer'?'<button class="primary" id="newEvent">+ Create Event</button>':'')+
