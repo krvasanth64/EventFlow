@@ -12,7 +12,7 @@ function v12RenderLiveAwards(){
  '<small>'+esc(a.category||'General')+' · '+esc(a.employeeName||'')+' · '+esc(a.contact||'No contact')+'</small>'+
  '<small>Presented by: '+esc(a.presenter||'Unassigned')+'</small></div>'+
  '<span class="tag '+(a.status==='presented'?'live':'')+'">'+esc(a.status)+'</span>'+
- (state.editing?'<div class="v12-row-actions"><button data-award-edit="'+esc(a.id)+'">Edit</button>'+
+ (efCanOperate()?'<div class="v12-row-actions">'+(efCanEdit()?'<button data-award-edit="'+esc(a.id)+'">Edit</button>':'')+
  (a.status!=='presented'?'<button data-award-done="'+esc(a.id)+'">Mark presented</button>':'<button data-award-pending="'+esc(a.id)+'">Reopen</button>')+'</div>':'')+
  '</div>').join('')||'<div class="empty"><strong>No awards for this category</strong>Choose another category or add an award.</div>';
  $('[data-award-edit]',list).forEach(b=>b.onclick=()=>efAwardModal((c.awards||[]).find(a=>a.id===b.dataset.awardEdit)));
