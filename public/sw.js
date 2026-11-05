@@ -1,10 +1,10 @@
 'use strict';
 // EventFlow performance cache: ONLY versioned, public static UI assets.
 // Sensitive APIs, sessions, SSE, media, reports and live state are NEVER cached.
-const CACHE='eventflow-static-v1.5.1';
+const CACHE='eventflow-static-v1.5.2';
 const PUBLIC_PATHS=new Set([
  '/style.css','/app.js','/extensions.js','/v12.js','/v13.js','/v14.js',
- '/v15.js','/v16.js','/v17.js','/v18.js','/v19.js','/v20.js','/v21.js',
+ '/v15.js','/v16.js','/v17.js','/v18.js','/v19.js','/v20.js','/v21.js','/v22.js',
  '/icon.svg','/manifest.webmanifest'
 ]);
 self.addEventListener('install',event=>{event.waitUntil(self.skipWaiting())});
