@@ -303,3 +303,25 @@ audio.ef-source-player{min-height:65px}
  .ef18-width{font-size:10px}.ef18-width input{width:49px;padding:5px}
  .ef18-column button{min-width:28px;padding:6px}
 }
+
+
+/* V1.4.9 - compact live queue pagination and upcoming readiness */
+.ef19-pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+ padding:10px 12px;margin:8px 0;background:#f5f7fc;border:1px solid #e1e7f2;border-radius:10px}
+.ef19-page-summary{color:#667590;font-size:12px}
+.ef19-page-summary strong{color:#293c5b;font-variant-numeric:tabular-nums}
+.ef19-page-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ef19-page-actions label{font-size:12px;font-weight:750;color:#52647d}
+.ef19-page-actions select{min-width:73px;max-width:85px;margin:0;padding:7px 9px;height:auto;font-size:12px}
+.ef19-page-actions button{font-size:12px;padding:7px 11px;min-height:34px}
+.ef19-page-index{font-size:12px;color:#566780;font-weight:750;font-variant-numeric:tabular-nums}
+.ef19-ready-count{display:inline-flex;align-items:center;align-self:flex-start;border-radius:20px;
+ padding:3px 8px;background:#fff0d3;color:#845715;font-size:11px;font-weight:850;
+ font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:4px}
+.ef19-ready-count.ef19-all-ready{background:#d7f6e4;color:#147046}
+#v12LiveQueue .v12-live-row{min-height:44px}
+@media(max-width:700px){
+ .ef19-pagination{align-items:flex-start;flex-direction:column}
+ .ef19-page-actions{width:100%}
+ .ef19-page-actions button{padding:8px 10px}
+}
