@@ -364,7 +364,7 @@ const server = http.createServer(async (req,res) => {
         let num=0;
         for(const program of programs){
           num++;
-          const item={id:program.id,title:program.title,order:num,status:program.status,type:program.type,
+          const item={id:program.id,programCode:program.programCode,title:program.title,order:num,status:program.status,type:program.type,
             category:program.category,durationSeconds:program.duration,media:[],script:[],externalSource:null};
           if(['url','linked'].includes(program.sourceType))item.externalSource={type:program.sourceType,reference:program.source};
           const sources=[];
@@ -375,7 +375,7 @@ const server = http.createServer(async (req,res) => {
           for(const source of sources){
             const candidate=path.resolve(MEDIA,source.ref);
             if(!candidate.startsWith(path.resolve(MEDIA)+path.sep)||!fs.existsSync(candidate)||!fs.statSync(candidate).isFile())fail(409,'DJ package cannot be completed: missing source for '+program.title);
-            const ext=path.extname(candidate).toLowerCase(),name='DJ_Media/'+String(num).padStart(3,'0')+'_'+safe(program.title)+'_'+program.id.slice(0,8)+'_'+(++seq)+(source.archived?'_ARCHIVED':'')+ext;
+            const ext=path.extname(candidate).toLowerCase(),name='DJ_Media/'+safe(program.programCode||String(num).padStart(3,'0'))+'_'+safe(program.title)+'_'+program.id.slice(0,8)+'_'+(++seq)+(source.archived?'_ARCHIVED':'')+ext;
             if(names.has(name))fail(409,'Duplicate file name during export');
             names.add(name);
             entries.push({name,file:candidate});
@@ -384,14 +384,14 @@ const server = http.createServer(async (req,res) => {
           manifest.programs.push(item);
         }
         const csvCell=value=>{const val=String(value??'').replace(/\r?\n/g,' ');return '"'+(/^\s*[=+\-@]/.test(val)?"'"+val:val).replace(/"/g,'""')+'"'};
-        const columns=['Order','Program ID','Title','Status','Type','Duration (seconds)','Current media filename','External source'];
-        const csv=[columns.map(csvCell).join(','),...manifest.programs.map(p=>[p.order,p.id,p.title,p.status,p.type,p.durationSeconds,p.media.filter(x=>!x.archived).map(x=>x.filename).join('; '),p.externalSource?.reference||''].map(csvCell).join(','))].join('\\r\\n');
+        const columns=['Order','Program Code','Program ID','Title','Status','Type','Duration (seconds)','Current media filename','External source'];
+        const csv=[columns.map(csvCell).join(','),...manifest.programs.map(p=>[p.order,p.programCode,p.id,p.title,p.status,p.type,p.durationSeconds,p.media.filter(x=>!x.archived).map(x=>x.filename).join('; '),p.externalSource?.reference||''].map(csvCell).join(','))].join('\\r\\n');
         const contents=[
           {name:'DJ_MANIFEST.json',content:JSON.stringify(manifest,null,2)},
           {name:'DJ_RUNNING_ORDER.csv',content:csv},
           {name:'DJ_EXTERNAL_URLS.csv',content:[
-            ['Order','Program ID','Program Title','Status','Source Type','External URL','Linked Reference'].map(csvCell).join(','),
-            ...manifest.programs.map(p=>[p.order,p.id,p.title,p.status,p.externalSource?.type||'none',
+            ['Order','Program Code','Program ID','Program Title','Status','Source Type','External URL','Linked Reference'].map(csvCell).join(','),
+            ...manifest.programs.map(p=>[p.order,p.programCode,p.id,p.title,p.status,p.externalSource?.type||'none',
               p.externalSource?.type==='url'?p.externalSource.reference:'',
               p.externalSource?.type==='linked'?p.externalSource.reference:''].map(csvCell).join(','))
           ].join('\r\n')},
@@ -404,7 +404,7 @@ const server = http.createServer(async (req,res) => {
               const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
               const url=p.externalSource?.type==='url'&&/^https?:\/\//i.test(p.externalSource.reference)?p.externalSource.reference:null;
               const local=p.media.find(x=>!x.archived)?.filename;
-              return '<tr><td>'+p.order+'</td><td>'+escapeHtml(p.title)+'</td><td>'+
+              return '<tr><td>'+p.order+'</td><td>'+escapeHtml(p.programCode||'')+' · '+escapeHtml(p.title)+'</td><td>'+
                 (url?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHtml(url)+'">Open URL</a><br>'+escapeHtml(url):
                  local?'<a href="'+escapeHtml(local)+'">Open media file</a>':
                  p.externalSource?.type==='linked'?'Linked host reference: '+escapeHtml(p.externalSource.reference):'No media')+
