@@ -43,14 +43,36 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build production-style Coolify image
         run: docker build --pull -t eventflow:staging-smoke .
-      - name: Start isolated test container and check startup
+      - name: Start isolated test container, health and persistence checks
         run: |
+          docker volume create eventflow-ci-volume
           docker run -d --name eventflow-staging-smoke \
+            --mount source=eventflow-ci-volume,target=/data \
             -p 127.0.0.1:18765:8765 \
             -e EVENTFLOW_ADMIN_PASSWORD=ci-staging-test-only-password \
             eventflow:staging-smoke
-          curl --fail --retry 15 --retry-delay 2 --retry-connrefused \
-            http://127.0.0.1:18765/api/health
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:18765/api/health; then
+              break
+            fi
+            if [ "$i" -eq 30 ]; then docker logs eventflow-staging-smoke; exit 1; fi
+            sleep 1
+          done
+          docker rm -f eventflow-staging-smoke
+          docker run -d --name eventflow-staging-smoke \
+            --mount source=eventflow-ci-volume,target=/data \
+            -p 127.0.0.1:18765:8765 \
+            eventflow:staging-smoke
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18765/api/health | grep -q '"users":1'; then
+              echo "Persisted admin and database survived container restart"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then docker logs eventflow-staging-smoke; exit 1; fi
+            sleep 1
+          done
       - name: Clean up
         if: always()
-        run: docker rm -f eventflow-staging-smoke || true
+        run: |
+          docker rm -f eventflow-staging-smoke || true
+          docker volume rm eventflow-ci-volume || true
