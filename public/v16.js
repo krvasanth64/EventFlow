@@ -114,6 +114,7 @@ programDialog=function(p){
  ef16OriginalProgramDialog(p);
  const form=$('#programForm');
  if(!form)return;
+ for(const field of ['employeeId','employeeName','contact'])form.querySelector('[name="'+field+'"]')?.closest('label')?.classList.add('hidden');
  const section=document.createElement('div');section.className='wide ef16-program-participants';
  section.innerHTML='<h3>Program participants '+(p?ef16Label(p):'')+'</h3>'+
  '<p class="muted tiny">'+(p?'Register employees/participants as child rows, then mark ready from Preparation or Live Control.':
