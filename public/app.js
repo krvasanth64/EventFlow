@@ -54,22 +54,67 @@ function showEventChooser(page,title){
   (!state.events.length?'<div class="empty"><strong>No events registered</strong>Go to Overview to create your first event.</div>':'');
   $$('[data-choose]',target).forEach(b=>b.onclick=()=>selectEvent(b.dataset.choose,page));
 }
-async function syncWorkspace(){if(!state.user)return;await refreshEvents();if(state.current){try{await loadEvent(state.current.event.id,false)}catch(e){if(e.message==='Event not found.'){state.current=null;state.selected=null;try{localStorage.removeItem('eventflow.activeEvent')}catch{};updateEventPicker();state.page='dashboard';navigate('dashboard');return}throw e}}render()}
-function connectStream(){
-  state.stream?.close();
-  clearInterval(state.leaseTimer);
-  clearInterval(state.syncTimer);
-  const s=new EventSource('/api/stream');
-  state.stream=s;
-  const status=$('#connectionStatus');
-  status.textContent='Connecting…';
-  s.onopen=()=>{if(state.stream===s)status.textContent='Live connected'};
-  s.onerror=()=>{if(state.stream===s)status.textContent='Sync via polling'};
-  s.onmessage=()=>act(syncWorkspace);
-  // Keep LAN/Tailscale viewers current if a proxy or browser interrupts the event stream.
-  state.syncTimer=setInterval(()=>{if(state.user)act(syncWorkspace)},15000);
-  state.leaseTimer=setInterval(()=>{if(state.editing&&state.current)api('/api/events/'+state.current.event.id+'/lease/renew','POST',{}).catch(()=>{state.editing=false;render()})},30000);
+// Event payloads are private and always fetched fresh; reduce redundant network work.
+let efSyncInFlight=false,efSyncRequested=false,efEventsFetchedAt=0,efLastSyncAt=0;
+async function syncWorkspace(options={}){
+ if(!state.user)return;
+ if(efSyncInFlight){efSyncRequested=true;return;}
+ efSyncInFlight=true;
+ try{
+  const now=Date.now();
+  if(options.refreshList||now-efEventsFetchedAt>60000){
+   await refreshEvents();efEventsFetchedAt=Date.now();
+  }
+  if(state.current&&(!options.eventId||options.eventId===state.current.event.id)){
+   try{await loadEvent(state.current.event.id,false)}
+   catch(e){
+    if(e.message==='Event not found.'){
+     state.current=null;state.selected=null;
+     try{localStorage.removeItem('eventflow.activeEvent')}catch{}
+     updateEventPicker();state.page='dashboard';navigate('dashboard');return;
+    }
+    throw e;
+   }
+  }
+  efLastSyncAt=Date.now();
+  render();
+ }finally{
+  efSyncInFlight=false;
+  if(efSyncRequested){efSyncRequested=false;queueMicrotask(()=>act(()=>syncWorkspace({refreshList:true})))}
+ }
 }
+function connectStream(){
+ state.stream?.close();
+ clearInterval(state.leaseTimer);
+ clearInterval(state.syncTimer);
+ const stream=new EventSource('/api/stream');
+ state.stream=stream;
+ const status=$('#connectionStatus');
+ status.textContent='Connecting…';
+ stream.onopen=()=>{if(state.stream===stream)status.textContent='Live connected'};
+ stream.onerror=()=>{if(state.stream===stream)status.textContent='Sync via polling'};
+ stream.onmessage=e=>{
+  if(state.stream!==stream)return;
+  let message={};try{message=JSON.parse(e.data)}catch{}
+  // An event-list refresh is unnecessary for routine changes in the current event.
+  if(message.eventId&&state.current&&message.eventId!==state.current.event.id)return;
+  act(()=>syncWorkspace({eventId:message.eventId||null}));
+ };
+ // EventSource carries live updates; fallback polling only when disconnected or periodically
+ // to recover from missed notifications. Never poll a background tab continuously.
+ state.syncTimer=setInterval(()=>{
+  if(!state.user||document.visibilityState==='hidden')return;
+  const lost=stream.readyState!==EventSource.OPEN;
+  if(lost||Date.now()-efLastSyncAt>120000)act(()=>syncWorkspace({refreshList:true}));
+ },30000);
+ state.leaseTimer=setInterval(()=>{
+  if(state.editing&&state.current)api('/api/events/'+state.current.event.id+'/lease/renew','POST',{})
+   .catch(()=>{state.editing=false;render()});
+ },30000);
+}
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState==='visible'&&state.user)act(()=>syncWorkspace({refreshList:true}));
+});
 function pageHead(kicker,title,subtitle,buttons=''){return '<div class="page-head"><div><div class="eyebrow">'+kicker+'</div><h1>'+title+'</h1><p>'+subtitle+'</p></div><div class="head-actions">'+buttons+'</div></div>'}
 function stat(label,value,foot){return '<div class="stat"><div class="stat-label">'+label+'</div><div class="stat-value">'+value+'</div><div class="stat-foot">'+foot+'</div></div>'}
 function render(){if(!state.user)return;const page=state.page;if(page==='dashboard')renderDashboard();if(page==='planner')renderPlanner();if(page==='live')renderLive();if(page==='awards')renderAwards();if(page==='reports')renderReports();if(page==='users')renderUsers();}
