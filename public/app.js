@@ -36,7 +36,7 @@ $('#globalEventSelect').addEventListener('change',ev=>{
 });
 function modal(title,html,setup,eyebrow='EVENTFLOW'){ $('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML=html;$('#modal').showModal();setup?.($('#modalBody')) }
 function closeModal(){$('#modal').close()}
-function navigate(page){if(page==='users'&&state.user.role!=='admin')return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',timeline:'LED Timeline',users:'Team & Access'}[page];render();}
+function navigate(page){if(page==='users'&&state.user.role!=='admin')return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',timeline:'LED Timeline',prep:'Participants · Next 4',users:'Team & Access'}[page];render();}
 function updateEventPicker(){
   const picker=$('#globalEventSelect');
   if(!picker)return;
