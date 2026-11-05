@@ -16,7 +16,7 @@ const BACKUPS = path.join(ROOT, 'backups');
 const PUBLIC = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
-const APP_VERSION = '1.5.0-beta';
+const APP_VERSION = '1.5.1-beta';
 const SECURE_COOKIES = process.env.EVENTFLOW_SECURE_COOKIES === '1';
 const PUBLIC_ORIGIN = String(process.env.EVENTFLOW_PUBLIC_ORIGIN||'').replace(/\/$/,'');
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
