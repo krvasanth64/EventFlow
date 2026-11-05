@@ -91,12 +91,22 @@ function buildPdf(kind,record,configInput={}){
   doc.moveTo(32,y+h).lineTo(32+space,y+h).lineWidth(.3).strokeColor('#dbe3ef').stroke();
   y+=h;index++;
  }
- doc.font('Helvetica').fontSize(9).fillColor('#66768d').text('Total '+title.toLowerCase()+': '+rows.length,32,Math.min(y+14,doc.page.height-35));
+ // Keep the totals line inside the remaining printable area. Do not let it auto-flow.
+ const totalsY=y+15;
+ if(totalsY<doc.page.height-48){
+  doc.font('Helvetica').fontSize(9).fillColor('#66768d')
+   .text('Total '+title.toLowerCase()+': '+rows.length,32,totalsY,
+    {width:space,height:12,lineBreak:false});
+ }
  const pages=doc.bufferedPageRange().count;
  for(let i=0;i<pages;i++){
   doc.switchToPage(i);
+  // Footer must stay INSIDE the PDFKit bottom margin. The old page.height-24
+  // position was below the 32pt margin, causing footer-only extra pages.
+  const footerY=doc.page.height-43;
   doc.font('Helvetica').fontSize(8).fillColor('#71809a')
-   .text('EventFlow  |  Page '+(i+1)+' / '+pages,32,doc.page.height-24,{width:space,align:'right'});
+   .text('EventFlow  |  Page '+(i+1)+' / '+pages,32,footerY,
+    {width:space,height:10,align:'right',lineBreak:false});
  }
  return new Promise((resolve,reject)=>{doc.on('error',reject);doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.end()});
 }
