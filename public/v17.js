@@ -57,7 +57,7 @@ function ef17RenderImport(){
   const data=await response.json();if(!response.ok)throw Error(data.error||'Import failed');
   ef17File=null;ef17Preview=null;
   toast('Imported '+data.counts.programs+' programs and '+data.counts.awards+' awards.');
-  await loadEvents();await loadEvent(data.event.id);navigate('planner');
+  await refreshEvents();await loadEvent(data.event.id);navigate('planner');
  });
  ef17LoadDemoSettings();
 }
@@ -76,12 +76,12 @@ async function ef17LoadDemoSettings(){
    '<p class="muted tiny">Demo creation is admin-only. Demo programs include sample audio tones, not copyrighted songs.</p>';
   $('#ef17DemoToggle').onchange=ev=>act(async()=>{
    const result=await api('/api/demo/settings','PUT',{enabled:ev.target.checked});
-   await loadEvents();ef17LoadDemoSettings();toast('Demo events '+(result.enabled?'enabled':'hidden'));
+   await refreshEvents();ef17LoadDemoSettings();toast('Demo events '+(result.enabled?'enabled':'hidden'));
   });
   $('#ef17DemoCreate').onclick=()=>act(async()=>{
    if(!confirm('Create a new independent sample event?'))return;
    const result=await api('/api/demo/create','POST',{});
-   await loadEvents();await loadEvent(result.event.id);navigate('prep');
+   await refreshEvents();await loadEvent(result.event.id);navigate('prep');
    toast('Demo created: '+result.counts.programs+' programs, '+result.counts.awards+' awards.');
   });
  }catch(e){if(node.isConnected)node.textContent=e.message}
