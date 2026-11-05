@@ -274,7 +274,9 @@ const awardInput = b => {
     presenter:String(b.presenter||'').slice(0,120),notes:String(b.notes||'').slice(0,1000)};
 };
 function broadcast(eventId) {
-  const packet = 'data: ' + JSON.stringify({ eventId, revision: db.revision }) + '\n\n';
+  const latest=db.history.find(h=>h.eventId===eventId);
+  const packet = 'data: ' + JSON.stringify({eventId,revision:db.revision,
+    actor:latest?.user||null,action:latest?.action||null}) + '\n\n';
   for (const c of clients) { try { c.write(packet); } catch { clients.delete(c); } }
 }
 function leaseOf(id) {
@@ -486,7 +488,7 @@ const server = http.createServer(async (req,res) => {
     if(route==='/api/admin/events'&&req.method==='GET'){
       need(user,['admin']);
       return send(res,200,{events:db.events.map(e=>({
-        id:e.id,title:e.title,date:e.date,status:e.status,isArchived:!!e.isArchived,
+        id:e.id,title:e.title,date:e.date,status:e.status,revision:e.revision,isArchived:!!e.isArchived,
         programCount:db.programs.filter(p=>p.eventId===e.id).length,
         awardCount:db.awards.filter(a=>a.eventId===e.id).length,
         isDemo:!!e.isDemo,updatedAt:e.updatedAt||null
@@ -504,6 +506,7 @@ const server = http.createServer(async (req,res) => {
       need(user);const id=eventMatch[1], action=eventMatch[2] || '';
       const e=byEvent(id);if(!e||e.isDemo&& !db.settings.demoEnabled&&user.role!=='admin') fail(404,'Event not found.');
       if(e.isArchived&&user.role!=='admin')fail(404,'Event not found.');
+      if(e.isArchived&&action&&!action.startsWith('admin/')&&action!=='export')fail(409,'Archived event is read-only. Restore it from Admin Event Management.');
       if (!action && req.method==='GET') return send(res,200,eventResponse(id,user,req));
       if(action==='admin/archive'&&req.method==='POST'){
         need(user,['admin']);const body=await jsonBody(req);revision(body,e);
@@ -970,11 +973,7 @@ const server = http.createServer(async (req,res) => {
         if(b.catalogs!==undefined)e.catalogs=cleanCatalogs(b.catalogs);
         e.revision++;audit('event.updated',user,id);persist();broadcast(id);return send(res,200,eventResponse(id,user,req));
       }
-      if(!action&&req.method==='DELETE'){
-        fail(405,'Use Admin Event Management to archive and permanently delete an event.');
-        requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
-        db.events=db.events.filter(x=>x.id!==id);db.programs=db.programs.filter(x=>x.eventId!==id);db.awards=db.awards.filter(x=>x.eventId!==id);leases.delete(id);audit('event.deleted',user,id,e.title);persist();broadcast(id);return send(res,200,{ok:true});
-      }
+      if(!action&&req.method==='DELETE')fail(405,'Archive the event using Admin Event Management before deleting it.');
     }
     if (route==='/api/users') {
       need(user,['admin']);
