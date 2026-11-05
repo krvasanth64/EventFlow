@@ -16,6 +16,7 @@ const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
 const APP_VERSION = '1.4.6-beta';
 const SECURE_COOKIES = process.env.EVENTFLOW_SECURE_COOKIES === '1';
+const PUBLIC_ORIGIN = String(process.env.EVENTFLOW_PUBLIC_ORIGIN||'').replace(/\/$/,'');
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
 const SESSION_AGE = 12 * 3600 * 1000;
 const LEASE_MS = 90 * 1000;
@@ -295,6 +296,11 @@ const server = http.createServer(async (req,res) => {
   try {
     const url = new URL(req.url,'http://localhost');
     const route = url.pathname;
+    // Opt-in same-origin gate for HTTPS staging; configure the public canonical origin.
+    // This prevents cross-site browser forms from mutating event state.
+    if(PUBLIC_ORIGIN&&['POST','PUT','PATCH','DELETE'].includes(req.method)){
+      if(req.headers.origin!==PUBLIC_ORIGIN)fail(403,'Request origin is not authorized.');
+    }
     const user = userOf(req);
     if (route === '/api/health') return send(res,200,{ ok:true, version:APP_VERSION, host:HOST, users:db.users.length, revision:db.revision });
     if (route === '/api/login' && req.method==='POST') {
