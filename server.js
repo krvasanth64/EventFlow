@@ -5,7 +5,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const {streamZip,mediaFiles}=require('./zip');
-const {createTemplate,parseWorkbook}=require('./workbook');
+const {createTemplate,parseWorkbook,createSectionTemplate,parseSectionWorkbook}=require('./workbook');
+const {buildPdf}=require('./report-pdf');
 
 const ROOT = path.resolve(process.env.EVENTFLOW_DATA || path.join(__dirname, 'runtime'));
 const DB = path.join(ROOT, 'data.json');
@@ -14,7 +15,7 @@ const BACKUPS = path.join(ROOT, 'backups');
 const PUBLIC = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
-const APP_VERSION = '1.4.7-beta';
+const APP_VERSION = '1.4.8-beta';
 const SECURE_COOKIES = process.env.EVENTFLOW_SECURE_COOKIES === '1';
 const PUBLIC_ORIGIN = String(process.env.EVENTFLOW_PUBLIC_ORIGIN||'').replace(/\/$/,'');
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
@@ -442,6 +443,62 @@ const server = http.createServer(async (req,res) => {
       need(user);const id=eventMatch[1], action=eventMatch[2] || '';
       const e=byEvent(id);if(!e||e.isDemo&& !db.settings.demoEnabled&&user.role!=='admin') fail(404,'Event not found.');
       if (!action && req.method==='GET') return send(res,200,eventResponse(id,user,req));
+      const sectionMatch=/^import\/(programs|awards)\/(template|preview|apply)$/.exec(action);
+      if(sectionMatch){
+        need(user,['admin','editor']);
+        const kind=sectionMatch[1],verb=sectionMatch[2];
+        if(verb==='template'&&req.method==='GET'){
+          const bytes=await createSectionTemplate(kind);
+          return send(res,200,bytes,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition':'attachment; filename="EventFlow_'+kind+'_Template.xlsx"'});
+        }
+        if(['preview','apply'].includes(verb)&&req.method==='POST'){
+          requireEditor(user,id,req);
+          const parsed=await parseSectionWorkbook(await binaryBody(req),kind);
+          const conflicts=kind==='programs'?
+            parsed.programs.filter(x=>eventPrograms(id).some(p=>p.title.toLowerCase()===x.title.toLowerCase()))
+              .map(x=>'Existing program title: '+x.title):
+            [];
+          parsed.errors.push(...conflicts);parsed.valid=parsed.errors.length===0;
+          if(verb==='preview')return send(res,200,{valid:parsed.valid,errors:parsed.errors,counts:parsed.counts,kind});
+          if(!parsed.valid)fail(422,parsed.errors.join('; ').slice(0,1200));
+          if(Number(url.searchParams.get('revision'))!==e.revision)fail(409,'The event changed. Preview again.');
+          if(kind==='programs'){
+            const initial=eventPrograms(id).length;
+            for(const [index,item] of parsed.programs.entries()){
+              const p={id:uid(),eventId:id,programCode:nextDisplayCode(e,'P'),
+                order:initial+index,title:item.title,type:item.type,category:item.category,
+                duration:item.duration,gap:item.gap,presenter:item.presenter,notes:item.notes,
+                sourceType:item.sourceType,source:item.source,status:'pending',actualStart:null,actualEnd:null,
+                participants:cleanParticipants(item.participants)};
+              validProgram(p);db.programs.push(p);
+            }
+          }else{
+            const initial=eventAwards(id).length;
+            for(const [index,item] of parsed.awards.entries()){
+              const details=awardInput({category:item.category,awardName:item.awardName,
+                winnerName:item.winnerName,presenter:item.presenter,employeeId:item.employeeId,
+                contact:item.contact,notes:item.notes});
+              db.awards.push({id:uid(),eventId:id,awardCode:nextDisplayCode(e,'A'),
+                order:initial+index,...details,status:'pending',presentedAt:null});
+            }
+          }
+          e.revision++;audit('event.section.import',user,id,kind+' '+(kind==='programs'?parsed.programs.length:parsed.awards.length));
+          persist();broadcast(id);
+          return send(res,201,eventResponse(id,user,req));
+        }
+      }
+      const pdfMatch=/^reports\/(programs|awards)\.pdf$/.exec(action);
+      if(pdfMatch&&req.method==='POST'){
+        need(user);
+        const options=await jsonBody(req,100*1024);
+        let pdf;
+        try{pdf=await buildPdf(pdfMatch[1],eventResponse(id,user,req),options)}
+        catch(err){fail(400,err.message)}
+        const base=String(e.title||'Event').replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,70);
+        return send(res,200,pdf,{'Content-Type':'application/pdf',
+          'Content-Disposition':'attachment; filename="'+base+'_'+pdfMatch[1]+'.pdf"'});
+      }
       if (action==='lease' && req.method==='POST') {
         need(user,['admin','editor']); const token=cookie(req,'ef_session');const lock=leaseOf(id);
         const body=await jsonBody(req);
