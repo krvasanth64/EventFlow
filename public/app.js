@@ -24,8 +24,20 @@ async function restoreLastEvent(){
   if(chosen){try{await loadEvent(chosen.id,false)}catch{state.current=null}}
   updateEventPicker();
 }
-async function initialize(){try{const r=await api('/api/me');state.user=r.user;showApp();await refreshEvents();await restoreLastEvent();navigate('dashboard');connectStream()}catch{showLogin()}}
-$('#loginForm').addEventListener('submit',e=>{e.preventDefault();act(async()=>{const f=new FormData(e.target);const x=await api('/api/login','POST',Object.fromEntries(f));state.user=x.user;showApp();await refreshEvents();await restoreLastEvent();navigate('dashboard');connectStream()})});
+async function initialize(){
+ try{
+  const r=await api('/api/me');state.user=r.user;showApp();
+  // A browser may remain logged in after a Node restart; select an event afresh.
+  navigate('dashboard');connectStream();
+  await refreshEvents();renderDashboard();
+ }catch(e){
+  // Do not replace the active workspace with login on a transient network error.
+  if(e?.message==='Please sign in.')showLogin();
+  else if(!state.user)showLogin();
+  else toast('Connection interrupted. Your session will reconnect.');
+ }
+}
+$('#loginForm').addEventListener('submit',e=>{e.preventDefault();act(async()=>{const f=new FormData(e.target);const x=await api('/api/login','POST',Object.fromEntries(f));state.user=x.user;state.current=null;state.selected=null;state.editing=false;showApp();navigate('dashboard');connectStream();await refreshEvents();renderDashboard()})});
 $('#logout').onclick=()=>act(async()=>{await api('/api/logout','POST',{});showLogin()});
 $$('[data-page]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
 $('#closeModal').onclick=()=>$('#modal').close();
@@ -36,7 +48,7 @@ $('#globalEventSelect').addEventListener('change',ev=>{
 });
 function modal(title,html,setup,eyebrow='EVENTFLOW'){ $('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML=html;$('#modal').showModal();setup?.($('#modalBody')) }
 function closeModal(){$('#modal').close()}
-function navigate(page){if(page==='users'&&state.user.role!=='admin')return;if(page==='import'&&!['admin','editor'].includes(state.user.role))return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',timeline:'LED Timeline',prep:'Participants · Next 4',import:'Excel Import & Demo',users:'Team & Access'}[page];render();}
+function navigate(page){if((page==='users'||page==='manage')&&state.user.role!=='admin')return;if(page==='import'&&!['admin','editor'].includes(state.user.role))return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',timeline:'LED Timeline',prep:'Participants · Next 4',import:'Excel Import & Demo',users:'Team & Access',manage:'Event Management'}[page];render();}
 function updateEventPicker(){
   const picker=$('#globalEventSelect');
   if(!picker)return;
@@ -66,7 +78,9 @@ async function syncWorkspace(options={}){
    await refreshEvents();efEventsFetchedAt=Date.now();
   }
   if(state.current&&(!options.eventId||options.eventId===state.current.event.id)){
-   try{await loadEvent(state.current.event.id,false)}
+   const before=state.current;
+   try{await loadEvent(state.current.event.id,false);
+    if(typeof ef22ReportEventChange==='function')ef22ReportEventChange(before,state.current,options.actor);}
    catch(e){
     if(e.message==='Event not found.'){
      state.current=null;state.selected=null;
@@ -98,7 +112,7 @@ function connectStream(){
   let message={};try{message=JSON.parse(e.data)}catch{}
   // An event-list refresh is unnecessary for routine changes in the current event.
   if(message.eventId&&state.current&&message.eventId!==state.current.event.id)return;
-  act(()=>syncWorkspace({eventId:message.eventId||null}));
+  act(()=>syncWorkspace({eventId:message.eventId||null,actor:message.actor||null}));
  };
  // EventSource carries live updates; fallback polling only when disconnected or periodically
  // to recover from missed notifications. Never poll a background tab continuously.
@@ -117,10 +131,10 @@ document.addEventListener('visibilitychange',()=>{
 });
 function pageHead(kicker,title,subtitle,buttons=''){return '<div class="page-head"><div><div class="eyebrow">'+kicker+'</div><h1>'+title+'</h1><p>'+subtitle+'</p></div><div class="head-actions">'+buttons+'</div></div>'}
 function stat(label,value,foot){return '<div class="stat"><div class="stat-label">'+label+'</div><div class="stat-value">'+value+'</div><div class="stat-foot">'+foot+'</div></div>'}
-function render(){if(!state.user)return;const page=state.page;if(page==='dashboard')renderDashboard();if(page==='planner')renderPlanner();if(page==='live')renderLive();if(page==='awards')renderAwards();if(page==='reports')renderReports();if(page==='users')renderUsers();}
+function render(){if(!state.user)return;const page=state.page;if(page==='manage'&&typeof ef22RenderEventManagement==='function'){ef22RenderEventManagement();return;}if(page==='dashboard')renderDashboard();if(page==='planner')renderPlanner();if(page==='live')renderLive();if(page==='awards')renderAwards();if(page==='reports')renderReports();if(page==='users')renderUsers();}
 function renderDashboard(){
 const events=state.events,upcoming=events.filter(e=>e.status!=='completed'),live=events.filter(e=>e.status==='live'),prog=events.reduce((a,e)=>a+(e.programCount||0),0);
-$('#pageDashboard').innerHTML=pageHead('YOUR WORKSPACE','Good to see you, '+esc(state.user.name.split(' ')[0])+'.','Plan unforgettable events with precision.',['admin','editor'].includes(state.user.role)?'<button class="primary" id="newEvent">+ Create Event</button>':'')+
+$('#pageDashboard').innerHTML=pageHead('YOUR WORKSPACE','Choose an event','Select the event you want to operate. Only that event will load and synchronize.',['admin','editor'].includes(state.user.role)?'<button class="primary" id="newEvent">+ Create Event</button>':'')+
 '<div class="stats">'+stat('Total events',events.length,'Across your workspace')+stat('Upcoming & active',upcoming.length,'Not yet completed')+stat('Programs planned',prog,'All registered programs')+stat('Live right now',live.length,'Currently in progress')+'</div>'+
 '<div class="card"><div class="card-title"><h3>All events</h3><span class="muted">'+events.length+' events</span></div><div class="event-grid">'+(events.map(e=>'<article class="event-card" data-event="'+esc(e.id)+'"><span class="tag '+esc(e.status)+'">'+esc(e.status)+'</span><h3>'+esc(e.title)+'</h3><div class="event-meta">◷ '+esc(e.date)+' · '+esc(e.start)+'<br>⌖ '+esc(e.venue||'Venue not set')+'</div><div class="event-foot"><span>'+e.programCount+' programs</span><b>Open planner →</b></div></article>').join('')||'<div class="empty"><strong>No events yet</strong>Create your first event to start organizing the program.</div>')+'</div></div>';
 $('#newEvent')?.addEventListener('click',()=>eventDialog());
