@@ -372,3 +372,30 @@ audio.ef-source-player{min-height:65px}
 .ef20-edit-award-roster{margin-top:12px}
 @media(max-width:950px){.ef20-led-main-grid{grid-template-columns:1fr}.ef20-led-awards-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ef20-award-prep-grid{grid-template-columns:1fr}}
 @media(max-width:530px){.ef20-led-shell{padding:8px}.ef20-led-awards-grid{grid-template-columns:1fr}.ef20-led-stage{min-height:260px}.ef20-led-program{padding:12px}}
+
+
+/* V1.5.2 — live multi-user awareness and admin event lifecycle */
+.ef22-live-notice{background:#fff3db;color:#754e0c;border:1px solid #f3cd79;
+ border-radius:10px;padding:11px 14px;margin:0 0 12px;display:flex;gap:12px;
+ align-items:center;justify-content:space-between;line-height:1.4}
+.ef22-live-notice small{display:block;color:#886623;margin-top:3px}
+.ef22-live-notice button{flex-shrink:0}
+.ef22-manage-rows{display:grid;gap:9px}
+.ef22-manage-row{border:1px solid #e0e6ef;border-radius:11px;padding:13px 15px;
+ display:flex;justify-content:space-between;align-items:center;gap:14px;background:#fff}
+.ef22-manage-title{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ef22-manage-title strong{overflow-wrap:anywhere}
+.ef22-manage-main{min-width:0}
+.ef22-manage-main p{margin-top:5px}
+.ef22-manage-actions{display:flex;flex-wrap:wrap;gap:7px;justify-content:flex-end}
+.ef22-state{padding:4px 9px;border-radius:20px;font-size:11px;font-weight:850}
+.ef22-active{background:#e0f8ea;color:#167746}
+.ef22-archived{background:#eeeafa;color:#66548d}
+.ef22-delete{border:1px solid #edb6b3;background:#fff4f3;color:#9c2525;
+ border-radius:7px;padding:9px 12px;font-weight:800;cursor:pointer}
+.ef22-delete:hover{background:#fce3e1}
+@media(max-width:700px){
+ .ef22-manage-row{align-items:stretch;flex-direction:column}
+ .ef22-manage-actions{justify-content:flex-start}
+ .ef22-live-notice{align-items:flex-start;flex-direction:column}
+}
