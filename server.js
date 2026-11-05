@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const {streamZip,mediaFiles}=require('./zip');
+const {createTemplate,parseWorkbook}=require('./workbook');
 
 const ROOT = path.resolve(process.env.EVENTFLOW_DATA || path.join(__dirname, 'runtime'));
 const DB = path.join(ROOT, 'data.json');
@@ -13,7 +14,7 @@ const BACKUPS = path.join(ROOT, 'backups');
 const PUBLIC = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
-const APP_VERSION = '1.4.5-beta';
+const APP_VERSION = '1.4.6-beta';
 const SECURE_COOKIES = process.env.EVENTFLOW_SECURE_COOKIES === '1';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
 const SESSION_AGE = 12 * 3600 * 1000;
@@ -69,6 +70,7 @@ const fresh = () => ({ version: 1, revision: 0, users: [], events: [], programs:
 let db = fs.existsSync(DB) ? JSON.parse(fs.readFileSync(DB, 'utf8')) : fresh();
 // Backward-compatible additions: existing runtime/data.json requires no migration.
 if (!Array.isArray(db.awards)) db.awards = [];
+if(!db.settings)db.settings={demoEnabled:false};
 let sessions = new Map();
 let clients = new Set();
 let leases = new Map();
@@ -177,6 +179,31 @@ const fail = (status, message) => { const err = new Error(message); err.status =
 function need(user, roles) {
   if (!user) fail(401, 'Please sign in.');
   if (roles && !roles.includes(user.role)) fail(403, 'Insufficient permission.');
+}
+function binaryBody(req,max=8*1024*1024){
+ return new Promise((resolve,reject)=>{
+  const parts=[];let length=0;
+  req.on('data',part=>{
+   length+=part.length;
+   if(length>max){const e=new Error('File too large (8 MB maximum).');e.status=413;reject(e);req.destroy();}
+   else parts.push(part);
+  });
+  req.on('end',()=>resolve(Buffer.concat(parts)));
+  req.on('error',reject);
+ });
+}
+function demoWav(){
+ const sampleRate=16000,duration=4,frames=sampleRate*duration;
+ const buf=Buffer.alloc(44+frames*2);
+ buf.write('RIFF',0);buf.writeUInt32LE(buf.length-8,4);buf.write('WAVEfmt ',8);buf.writeUInt32LE(16,16);
+ buf.writeUInt16LE(1,20);buf.writeUInt16LE(1,22);buf.writeUInt32LE(sampleRate,24);
+ buf.writeUInt32LE(sampleRate*2,28);buf.writeUInt16LE(2,32);buf.writeUInt16LE(16,34);
+ buf.write('data',36);buf.writeUInt32LE(frames*2,40);
+ for(let i=0;i<frames;i++){
+  const fade=Math.min(1,i/1800,(frames-i)/2000),v=Math.round(3500*Math.sin(i*2*Math.PI*440/sampleRate)*Math.max(0,fade));
+  buf.writeInt16LE(v,44+i*2);
+ }
+ return buf;
 }
 function jsonBody(req, max = 2 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
@@ -296,8 +323,107 @@ const server = http.createServer(async (req,res) => {
       const stamp=ISO().replace(/[:.]/g,'-');
       return await streamZip(res,entries,'EventFlow_FULL_'+stamp+'.zip');
     }
+    if(route==='/api/import/template'&&req.method==='GET'){
+      need(user,['admin','editor']);
+      const workbook=await createTemplate(url.searchParams.get('sample')==='full');
+      return send(res,200,workbook,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+       'Content-Disposition':'attachment; filename="EventFlow_Import_Template.xlsx"'});
+    }
+    if(route==='/api/import/preview'&&req.method==='POST'){
+      need(user,['admin','editor']);
+      const data=await parseWorkbook(await binaryBody(req));
+      return send(res,200,data);
+    }
+    if(route==='/api/import/apply'&&req.method==='POST'){
+      need(user,['admin','editor']);
+      const payload=await parseWorkbook(await binaryBody(req));
+      if(!payload.valid)fail(422,'Workbook has '+payload.errors.length+' validation error(s). Review preview.');
+      if(db.events.some(x=>x.title.toLowerCase()===payload.event.title.toLowerCase()))
+        fail(409,'An event with this title already exists. Rename it or use a new workbook.');
+      const e={id:uid(),catalogs:defaultCatalogs(),...payload.event,status:'draft',revision:1,createdAt:ISO(),
+        nextProgramNumber:payload.programs.length+1,nextAwardNumber:payload.awards.length+1};
+      const programs=payload.programs.map((p,i)=>({
+        id:uid(),eventId:e.id,order:i,programCode:'P'+String(i+1).padStart(4,'0'),
+        title:p.title,type:p.type,category:p.category,duration:p.duration,gap:p.gap,
+        presenter:p.presenter,sourceType:p.sourceType,source:p.source,notes:p.notes,
+        status:'pending',actualStart:null,actualEnd:null,
+        participants:p.participants.map(person=>({id:uid(),employeeCode:person.employeeCode,
+          name:person.name,contact:person.contact,checkedIn:false,checkedAt:null,checkedBy:null}))
+      }));
+      const awards=payload.awards.map((a,i)=>({
+        id:uid(),eventId:e.id,order:i,awardCode:'A'+String(i+1).padStart(4,'0'),
+        category:a.category,awardName:a.awardName,winnerName:a.winnerName,
+        presenter:a.presenter,employeeId:a.employeeId||'',employeeName:'',contact:a.contact||'',
+        recipientDetails:'',notes:a.notes||'',status:'pending',presentedAt:null
+      }));
+      db.events.push(e);db.programs.push(...programs);db.awards.push(...awards);
+      audit('event.imported',user,e.id,'Excel '+programs.length+' programs and '+awards.length+' awards');
+      persist();broadcast(e.id);
+      return send(res,201,{event:e,counts:payload.counts});
+    }
+    if(route==='/api/demo/settings'&&req.method==='GET'){
+      need(user);
+      return send(res,200,{enabled:!!db.settings.demoEnabled});
+    }
+    if(route==='/api/demo/settings'&&req.method==='PUT'){
+      need(user,['admin']);
+      const body=await jsonBody(req);
+      if(typeof body.enabled!=='boolean')fail(400,'Enabled must be boolean.');
+      db.settings.demoEnabled=body.enabled;
+      audit('demo.visibility',user,'system',String(body.enabled));persist();
+      return send(res,200,{enabled:body.enabled});
+    }
+    if(route==='/api/demo/create'&&req.method==='POST'){
+      need(user,['admin']);
+      if(!db.settings.demoEnabled)fail(409,'Enable demo events before creating a demo.');
+      const title='EventFlow Full Demo '+ISO().replace(/[:.]/g,'-');
+      const event={id:uid(),title,date:ISO().slice(0,10),start:'18:00',
+        venue:'Demo Auditorium',organizer:'EventFlow Demo',description:'Synthetic rehearsal data. Not a real event.',
+        catalogs:defaultCatalogs(),status:'draft',isDemo:true,revision:1,createdAt:ISO(),
+        nextProgramNumber:9,nextAwardNumber:5};
+      const specs=[
+       ['Opening Welcome','Welcome Address','Ceremony',240,'none',''],
+       ['Group Dance','Group Dance','Dance',360,'file',''],
+       ['Karaoke Singing','Karaoke Singing','Music',300,'url','https://example.com/replace-this-demo-url'],
+       ['Guest Speech','Speech','Speech',420,'none',''],
+       ['Magic Show','Magic Show','Entertainment',420,'none',''],
+       ['Solo Singing','Solo Singing','Music',300,'file',''],
+       ['Standup Comedy','Stand-up Comedy','Entertainment',360,'none',''],
+       ['Grand Finale','Group Dance','Dance',480,'none','']
+      ];
+      const dir=path.join(MEDIA,event.id);fs.mkdirSync(dir,{recursive:true});
+      const wav=demoWav();const files=[];
+      const programs=specs.map((spec,i)=>{
+       const [title,type,category,duration,kind,urlRef]=spec;
+       const id=uid(),n=i+1,programCode='P'+String(n).padStart(4,'0');
+       let sourceType=kind,source=kind==='url'?urlRef:'';
+       if(kind==='file'){
+         const filename=programCode+'_SampleTone.wav';
+         const filepath=path.join(dir,filename);fs.writeFileSync(filepath,wav);files.push(filepath);
+         source=event.id+'/'+filename;
+       }
+       return {id,eventId:event.id,programCode,order:i,title,type,category,duration,gap:30,
+         presenter:'Demo Stage Team',sourceType,source,sourceName:kind==='file'?'SampleTone.wav':'',
+         notes:'Rehearsal only',status:'pending',actualStart:null,actualEnd:null,
+         participants:Array.from({length:i%3+2},(_,j)=>({
+           id:uid(),employeeCode:'DEMO'+String(i*5+j+1).padStart(4,'0'),
+           name:'Sample Participant '+(i+1)+'-'+(j+1),contact:'',checkedIn:false,checkedAt:null,checkedBy:null
+         }))};
+      });
+      const awardSpecs=[['Excellence','Best Performer','Demo Winner One','Chief Guest'],
+       ['Team','Best Group','Demo Team','Managing Director'],['Service','Long Service','Demo Winner Two','HR Head'],
+       ['Special Recognition','Outstanding Achievement','Demo Winner Three','Event Host']];
+      const awards=awardSpecs.map(([category,awardName,winnerName,presenter],i)=>({
+        id:uid(),eventId:event.id,awardCode:'A'+String(i+1).padStart(4,'0'),order:i,
+        category,awardName,winnerName,presenter,status:'pending',presentedAt:null
+      }));
+      db.events.push(event);db.programs.push(...programs);db.awards.push(...awards);
+      audit('demo.created',user,event.id,event.title);persist();broadcast(event.id);
+      return send(res,201,{event,counts:{programs:8,participants:programs.reduce((n,p)=>n+p.participants.length,0),
+        awards:4,media:files.length}});
+    }
     if (route === '/api/me') { need(user); return send(res,200,{user:publicUser(user), settings:{port:PORT, mediaRoot:MEDIA}}); }
-    if (route === '/api/events' && req.method==='GET') { need(user); return send(res,200,{events:db.events.map(e=>({...e,programCount:eventPrograms(e.id).length})).sort((a,b)=>b.date.localeCompare(a.date))}); }
+    if (route === '/api/events' && req.method==='GET') { need(user); return send(res,200,{events:db.events.filter(e=>!e.isDemo||db.settings.demoEnabled||user.role==='admin').map(e=>({...e,programCount:eventPrograms(e.id).length})).sort((a,b)=>b.date.localeCompare(a.date))}); }
     if (route === '/api/events' && req.method==='POST') {
       need(user,['admin','editor']); const b=await jsonBody(req);
       if(!String(b.title||'').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.date||'')) || !/^\d{2}:\d{2}$/.test(String(b.start||''))) fail(400,'Title, date, and start time are required.');
@@ -308,7 +434,7 @@ const server = http.createServer(async (req,res) => {
     const eventMatch = /^\/api\/events\/([a-f0-9-]+)(?:\/(.*))?$/.exec(route);
     if (eventMatch) {
       need(user);const id=eventMatch[1], action=eventMatch[2] || '';
-      const e=byEvent(id);if(!e) fail(404,'Event not found.');
+      const e=byEvent(id);if(!e||e.isDemo&& !db.settings.demoEnabled&&user.role!=='admin') fail(404,'Event not found.');
       if (!action && req.method==='GET') return send(res,200,eventResponse(id,user,req));
       if (action==='lease' && req.method==='POST') {
         need(user,['admin','editor']); const token=cookie(req,'ef_session');const lock=leaseOf(id);
