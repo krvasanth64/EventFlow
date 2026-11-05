@@ -121,7 +121,7 @@ programDialog=function(p){
  'Save the new program first, then reopen it to add the participant roster.')+'</p>'+
  (p?'<button type="button" class="secondary" id="ef16ManageRoster">Manage participants ('+(p.participants?.length||0)+')</button>':'');
  form.querySelector('.form-grid')?.append(section);
- $('#ef16ManageRoster')?.addEventListener('click',()=>ef16EditParticipants(p));
+ $('#ef16ManageRoster')?.addEventListener('click',()=>{closeModal();ef16EditParticipants(p)});
 };
 const ef16OriginalQueueRow=v12QueueRow;
 v12QueueRow=function(p,i,forecast,active){
