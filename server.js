@@ -668,7 +668,7 @@ setInterval(()=>{for(const [token,s] of sessions)if(s.expiry<time())sessions.del
    if(event[counter]!==expected){event[counter]=expected;changed=true;}
   }
   for(const p of db.programs.filter(p=>p.eventId===event.id)){
-   if(!Array.isArray(p.participants)){p.participants=[];changed=true;}
+   if(!Array.isArray(p.participants)){p.participants=p.employeeName?[{id:uid(),employeeCode:String(p.employeeId||''),name:String(p.employeeName),contact:String(p.contact||''),checkedIn:false,checkedAt:null,checkedBy:null}]:[];changed=true;}
   }
  }
  return changed;
