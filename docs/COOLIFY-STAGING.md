@@ -10,9 +10,9 @@ This document describes an **isolated staging setup**, not approval for public p
 
 ## Coolify configuration
 - Source: `krvasanth64/EventFlow`, branch `feature/live-console-v14-foundation`.
-- Build pack: **Dockerfile**; Dockerfile location: `./Dockerfile`.
+- Build pack: **Dockerfile**; Dockerfile location: `./Dockerfile`. The Docker build uses `npm ci --omit=dev` against the committed `package-lock.json`.
 - Application port: **8765** (internal).
-- Container environment: `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=8765`, `EVENTFLOW_DATA=/data`, `EVENTFLOW_SECURE_COOKIES=1`.
+- Container environment: `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=8765`, `EVENTFLOW_DATA=/data`, `EVENTFLOW_SECURE_COOKIES=1`, `EVENTFLOW_PUBLIC_ORIGIN=https://your-staging-subdomain.example.com` (replace with exact real HTTPS origin).
 - Initial admin: supply `EVENTFLOW_ADMIN_PASSWORD` privately as a Coolify secret, **only when bootstrapping a new empty database**, then remove it from deployment configuration after admin creation.
 - Data: persistent named volume mounted at `/data`. The Node process runs as UID/GID **10001**. Ensure the volume is writable by that identity. This volume must survive rebuild/redeploy/restart.
 - Scale: **one replica only**. Never run two Node processes against the same JSON database directory.
@@ -52,3 +52,10 @@ node server.js
 ```
 
 Do not put backup ZIP files or user credentials into GitHub, Docker image layers, or public web directories.
+
+## V1.4.8 readiness update
+- [x] Dependency lockfile committed to feature branch at `c37f96e`; Docker and CI now use reproducible `npm ci`.
+- [x] Local Windows V1.4.8 health check reported `ok: true`, `users: 1`; server runtime no longer appears to be failing. Authentication was not independently tested on the user's browser.
+- [ ] Local `npm audit` still reports **two moderate issues**, including the ExcelJS transitive `uuid@8.3.2`. Review remediation before public launch; do not blindly force an ExcelJS major downgrade.
+- [ ] Validate the Docker build and deployed Coolify host under HTTPS; do not equate passing GitHub Actions with a running staging application.
+- [ ] Confirm media playback, SSE, PDF configuration, imports, and full restore rehearsal on separate data volume.
