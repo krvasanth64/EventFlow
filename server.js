@@ -11,6 +11,7 @@ const {buildPdf}=require('./report-pdf');
 
 const ROOT = path.resolve(process.env.EVENTFLOW_DATA || path.join(__dirname, 'runtime'));
 const DB = path.join(ROOT, 'data.json');
+const SESSIONS_FILE = path.join(ROOT, 'sessions.json');
 const MEDIA = path.join(ROOT, 'media');
 const BACKUPS = path.join(ROOT, 'backups');
 const PUBLIC = path.join(__dirname, 'public');
@@ -74,7 +75,23 @@ let db = fs.existsSync(DB) ? JSON.parse(fs.readFileSync(DB, 'utf8')) : fresh();
 // Backward-compatible additions: existing runtime/data.json requires no migration.
 if (!Array.isArray(db.awards)) db.awards = [];
 if(!db.settings)db.settings={demoEnabled:false};
-let sessions = new Map();
+// Sessions are persisted with SHA-256 token identifiers, never with raw browser tokens.
+// This prevents operator sign-outs when the single Node process is restarted.
+const tokenKey = token => crypto.createHash('sha256').update(String(token||'')).digest('hex');
+function loadSessions(){
+ try{
+  const data=JSON.parse(fs.readFileSync(SESSIONS_FILE,'utf8'));
+  if(!Array.isArray(data))return new Map();
+  return new Map(data.filter(x=>x&&/^[a-f0-9]{64}$/.test(x.key)&&Number(x.expiry)>Date.now()&&db.users.some(u=>u.id===x.userId&&u.active))
+   .map(x=>[x.key,{userId:x.userId,expiry:x.expiry}]));
+ }catch{return new Map();}
+}
+let sessions=loadSessions();
+function persistSessions(){
+ const file=SESSIONS_FILE+'.tmp';
+ fs.writeFileSync(file,JSON.stringify([...sessions].map(([key,s])=>({key,userId:s.userId,expiry:s.expiry}))),{mode:0o600});
+ fs.renameSync(file,SESSIONS_FILE);
+}
 let clients = new Set();
 let leases = new Map();
 let writeCount = 0;
@@ -181,7 +198,7 @@ const cookieFlags = '; HttpOnly; SameSite=Lax; Path=/' + (SECURE_COOKIES ? '; Se
 const cookie = (req, name) => (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith(name + '='))?.slice(name.length + 1);
 function userOf(req) {
   const token = cookie(req, 'ef_session');
-  const s = sessions.get(token);
+  const s = sessions.get(tokenKey(token));
   if (!s || s.expiry < time()) return null;
   return db.users.find(x => x.id === s.userId && x.active) || null;
 }
@@ -337,11 +354,11 @@ const server = http.createServer(async (req,res) => {
       const u = db.users.find(u => u.username.toLowerCase() === String(body.username || '').toLowerCase() && u.active);
       if (!u || !checkPassword(body.password, u.password)) fail(401,'Invalid username or password.');
       const token = crypto.randomBytes(32).toString('hex');
-      sessions.set(token,{userId:u.id,expiry:time()+SESSION_AGE});
+      sessions.set(tokenKey(token),{userId:u.id,expiry:time()+SESSION_AGE});persistSessions();
       return send(res,200,{user:publicUser(u)}, {'Set-Cookie':'ef_session='+token+cookieFlags+'; Max-Age=43200'});
     }
     if (route === '/api/logout' && req.method==='POST') {
-      sessions.delete(cookie(req,'ef_session'));
+      sessions.delete(tokenKey(cookie(req,'ef_session')));persistSessions();
       for(const [id,l] of leases) if(l.token===cookie(req,'ef_session')) { leases.delete(id); broadcast(id); }
       return send(res,200,{ok:true},{'Set-Cookie':'ef_session='+cookieFlags+'; Max-Age=0'});
     }
@@ -460,7 +477,21 @@ const server = http.createServer(async (req,res) => {
         awards:4,media:files.length}});
     }
     if (route === '/api/me') { need(user); return send(res,200,{user:publicUser(user), settings:{port:PORT, mediaRoot:MEDIA}}); }
-    if (route === '/api/events' && req.method==='GET') { need(user); return send(res,200,{events:db.events.filter(e=>!e.isDemo||db.settings.demoEnabled||user.role==='admin').map(e=>({...e,programCount:eventPrograms(e.id).length})).sort((a,b)=>b.date.localeCompare(a.date))}); }
+    if (route === '/api/events' && req.method==='GET') {
+      need(user);
+      return send(res,200,{events:db.events.filter(e=>!e.isArchived&&(!e.isDemo||db.settings.demoEnabled||user.role==='admin'))
+        .map(e=>({...e,programCount:db.programs.filter(p=>p.eventId===e.id).length}))
+        .sort((a,b)=>b.date.localeCompare(a.date))});
+    }
+    if(route==='/api/admin/events'&&req.method==='GET'){
+      need(user,['admin']);
+      return send(res,200,{events:db.events.map(e=>({
+        id:e.id,title:e.title,date:e.date,status:e.status,isArchived:!!e.isArchived,
+        programCount:db.programs.filter(p=>p.eventId===e.id).length,
+        awardCount:db.awards.filter(a=>a.eventId===e.id).length,
+        isDemo:!!e.isDemo,updatedAt:e.updatedAt||null
+      })).sort((a,b)=>b.date.localeCompare(a.date))});
+    }
     if (route === '/api/events' && req.method==='POST') {
       need(user,['admin','editor']); const b=await jsonBody(req);
       if(!String(b.title||'').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.date||'')) || !/^\d{2}:\d{2}$/.test(String(b.start||''))) fail(400,'Title, date, and start time are required.');
@@ -472,7 +503,36 @@ const server = http.createServer(async (req,res) => {
     if (eventMatch) {
       need(user);const id=eventMatch[1], action=eventMatch[2] || '';
       const e=byEvent(id);if(!e||e.isDemo&& !db.settings.demoEnabled&&user.role!=='admin') fail(404,'Event not found.');
+      if(e.isArchived&&user.role!=='admin')fail(404,'Event not found.');
       if (!action && req.method==='GET') return send(res,200,eventResponse(id,user,req));
+      if(action==='admin/archive'&&req.method==='POST'){
+        need(user,['admin']);const body=await jsonBody(req);revision(body,e);
+        if(typeof body.archived!=='boolean')fail(400,'Archived must be boolean.');
+        if(e.status==='live'&&body.archived)fail(409,'Finish the live event before archiving.');
+        if(leaseOf(id)&&body.archived)fail(409,'Release the editor lease before archiving.');
+        e.isArchived=body.archived;e.updatedAt=ISO();e.revision++;
+        audit(body.archived?'event.archived':'event.restored',user,id,e.title);
+        persist();broadcast(id);return send(res,200,{eventId:id,archived:e.isArchived});
+      }
+      if(action==='admin/purge'&&req.method==='POST'){
+        need(user,['admin']);const body=await jsonBody(req);revision(body,e);
+        if(!e.isArchived)fail(409,'Archive the event before permanent deletion.');
+        if(e.status==='live')fail(409,'Live event cannot be deleted.');
+        if(leaseOf(id))fail(409,'Release editing lease before deletion.');
+        if(body.confirmTitle!==e.title)fail(400,'Enter the exact event title to permanently delete.');
+        const snapshot=JSON.stringify({event:e,programs:eventPrograms(id),awards:eventAwards(id)},null,2);
+        const stamp=ISO().replace(/[:.]/g,'-');
+        fs.writeFileSync(path.join(BACKUPS,'DELETED_'+safe(e.title)+'_'+stamp+'.json'),snapshot,{mode:0o600});
+        db.events=db.events.filter(x=>x.id!==id);
+        db.programs=db.programs.filter(x=>x.eventId!==id);
+        db.awards=db.awards.filter(x=>x.eventId!==id);
+        leases.delete(id);audit('event.permanently_deleted',user,id,e.title);
+        persist();broadcast(id);
+        // Program/award records are gone. Remove event-local media only after DB commit.
+        // The pre-delete JSON snapshot is not a substitute for the admin full ZIP backup.
+        fs.rmSync(path.join(MEDIA,id),{recursive:true,force:true});
+        return send(res,200,{deleted:true,eventId:id});
+      }
       const sectionMatch=/^import\/(programs|awards)\/(template|preview|apply)$/.exec(action);
       if(sectionMatch){
         need(user,['admin','editor']);
@@ -911,6 +971,7 @@ const server = http.createServer(async (req,res) => {
         e.revision++;audit('event.updated',user,id);persist();broadcast(id);return send(res,200,eventResponse(id,user,req));
       }
       if(!action&&req.method==='DELETE'){
+        fail(405,'Use Admin Event Management to archive and permanently delete an event.');
         requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
         db.events=db.events.filter(x=>x.id!==id);db.programs=db.programs.filter(x=>x.eventId!==id);db.awards=db.awards.filter(x=>x.eventId!==id);leases.delete(id);audit('event.deleted',user,id,e.title);persist();broadcast(id);return send(res,200,{ok:true});
       }
@@ -974,4 +1035,4 @@ const server = http.createServer(async (req,res) => {
   }
 });
 server.listen(PORT,HOST,()=>console.log('EventFlow at http://'+HOST+':'+PORT+' | data: '+ROOT));
-setInterval(()=>{for(const [token,s] of sessions)if(s.expiry<time())sessions.delete(token);for(const [id] of leases)if(!leaseOf(id))broadcast(id);for(const c of clients){try{c.write(': ping\n\n');}catch{clients.delete(c);}}},30000).unref();
+setInterval(()=>{let expired=false;for(const [token,s] of sessions)if(s.expiry<time()){sessions.delete(token);expired=true;}if(expired)persistSessions();for(const [id] of leases)if(!leaseOf(id))broadcast(id);for(const c of clients){try{c.write(': ping\n\n');}catch{clients.delete(c);}}},30000).unref();
