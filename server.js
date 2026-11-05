@@ -256,6 +256,38 @@ const server = http.createServer(async (req,res) => {
       if (action==='lease/renew' && req.method==='POST') {
         requireEditor(user,id,req); const l=leases.get(id);l.expires=time()+LEASE_MS;return send(res,200,{expires:l.expires});
       }
+      if (['dj-links.csv','dj-links.html'].includes(action) && req.method==='GET') {
+        need(user,['admin','editor','live_controller']);
+        const rows=eventPrograms(id).map((p,i)=>({
+          order:i+1,id:p.id,title:p.title,status:p.status,type:p.type,
+          category:p.category||'',sourceType:p.sourceType||'none',
+          sourceURL:p.sourceType==='url'&&/^https?:\/\//i.test(String(p.source||''))?p.source:'',
+          linkedReference:p.sourceType==='linked'?p.source||'':'',
+          fileName:p.sourceType==='file'?p.sourceName||path.basename(p.source||''):'',
+          durationSeconds:Number(p.duration)||0
+        }));
+        const escapeCSV=v=>{
+          const value=String(v??'').replace(/\r?\n/g,' ');
+          const protectedValue=/^[\s]*[=+\-@\t\r]/.test(value)?"'"+value:value;
+          return '"'+protectedValue.replace(/"/g,'""')+'"';
+        };
+        const csv=[['Order','Program ID','Program Title','Status','Category','Program Type','Source Type','External URL','Linked Reference','Uploaded File','Duration Seconds'].map(escapeCSV).join(','),
+          ...rows.map(p=>[p.order,p.id,p.title,p.status,p.category,p.type,p.sourceType,p.sourceURL,p.linkedReference,p.fileName,p.durationSeconds].map(escapeCSV).join(','))].join('\r\n');
+        const filename=safe(e.title)+'_'+id.slice(0,8)+'_DJ_URLS';
+        if(action==='dj-links.csv')
+          return send(res,200,csv,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="'+filename+'.csv"'});
+        const escHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const body='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+          '<title>'+escHtml(e.title)+' — DJ Links</title><style>body{font:16px system-ui;margin:2rem auto;padding:0 1rem;max-width:1100px;color:#18223a}h1{overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #d8e0eb;text-align:left;padding:12px 9px;overflow-wrap:anywhere}th{background:#f2f5fc}a{color:#2356b9}small{color:#5f6e83}@media(max-width:650px){table{font-size:13px}th,td{padding:8px 4px}}</style></head><body>'+
+          '<h1>'+escHtml(e.title)+' — DJ Link Sheet</h1><small>Program order and external references. Internet access may be required. Only http(s) source URLs are clickable; local linked references must be opened on their own host.</small>'+
+          '<table><thead><tr><th>#</th><th>Program</th><th>Status</th><th>Source</th></tr></thead><tbody>'+
+          rows.map(p=>'<tr><td>'+p.order+'</td><td><strong>'+escHtml(p.title)+'</strong><br><small>'+escHtml(p.category)+'</small></td><td>'+escHtml(p.status)+'</td><td>'+
+            (p.sourceURL?'<a href="'+escHtml(p.sourceURL)+'" target="_blank" rel="noopener noreferrer">Open URL</a><br><small>'+escHtml(p.sourceURL)+'</small>':
+             p.fileName?'Uploaded media: '+escHtml(p.fileName):
+             p.linkedReference?'Host reference: '+escHtml(p.linkedReference):'No media')+'</td></tr>').join('')+
+          '</tbody></table></body></html>';
+        return send(res,200,body,{'Content-Type':'text/html; charset=utf-8','Content-Disposition':'attachment; filename="'+filename+'.html"','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"});
+      }
       if (action==='dj-package' && req.method==='GET') {
         need(user,['admin','editor','live_controller']);
         const programs=eventPrograms(id),awards=eventAwards(id);
@@ -289,6 +321,28 @@ const server = http.createServer(async (req,res) => {
         const contents=[
           {name:'DJ_MANIFEST.json',content:JSON.stringify(manifest,null,2)},
           {name:'DJ_RUNNING_ORDER.csv',content:csv},
+          {name:'DJ_EXTERNAL_URLS.csv',content:[
+            ['Order','Program ID','Program Title','Status','Source Type','External URL','Linked Reference'].map(csvCell).join(','),
+            ...manifest.programs.map(p=>[p.order,p.id,p.title,p.status,p.externalSource?.type||'none',
+              p.externalSource?.type==='url'?p.externalSource.reference:'',
+              p.externalSource?.type==='linked'?p.externalSource.reference:''].map(csvCell).join(','))
+          ].join('\r\n')},
+          {name:'DJ_LINK_SHEET.html',content:(
+            '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+            '<title>DJ Links</title><style>body{font:16px system-ui;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#18223a}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #d8e0eb;padding:12px 8px;text-align:left;overflow-wrap:anywhere}th{background:#f2f5fc}a{color:#2356b9}</style></head><body>'+
+            '<h1>'+String(e.title).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))+' — DJ Link Sheet</h1><p>External sources need connectivity. Uploaded files are linked relative to the DJ ZIP folder.</p>'+
+            '<table><thead><tr><th>Order</th><th>Program</th><th>Source</th></tr></thead><tbody>'+
+            manifest.programs.map(p=>{
+              const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+              const url=p.externalSource?.type==='url'&&/^https?:\/\//i.test(p.externalSource.reference)?p.externalSource.reference:null;
+              const local=p.media.find(x=>!x.archived)?.filename;
+              return '<tr><td>'+p.order+'</td><td>'+escapeHtml(p.title)+'</td><td>'+
+                (url?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHtml(url)+'">Open URL</a><br>'+escapeHtml(url):
+                 local?'<a href="'+escapeHtml(local)+'">Open media file</a>':
+                 p.externalSource?.type==='linked'?'Linked host reference: '+escapeHtml(p.externalSource.reference):'No media')+
+                '</td></tr>';
+            }).join('')+'</tbody></table></body></html>'
+          )},
           {name:'README.txt',content:'EventFlow DJ package. Play media files from DJ_Media. External URLs and linked host paths are references only. Archived versions are named ARCHIVED.\\n'},
           ...entries
         ];
