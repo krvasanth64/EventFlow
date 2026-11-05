@@ -111,11 +111,13 @@ test('new-event XLSX import, admin demo creation, visibility and permissions',as
  assert.equal(media.status,200);
  assert.equal(media.body.subarray(0,4).toString(),'RIFF');
  assert.equal((await req(url,'/api/events/'+did,vc)).status,200);
+ assert.equal((await req(url,'/media/'+file.source,vc)).status,200,'visible demo media accessible');
  const disabled=await req(url,'/api/demo/settings',admin,'PUT',{enabled:false});
  assert.equal(disabled.body.enabled,false);
  const list=await req(url,'/api/events',vc);
  assert.equal(list.body.events.some(e=>e.id===did),false);
  assert.equal((await req(url,'/api/events/'+did,vc)).status,404);
+ assert.equal((await req(url,'/media/'+file.source,vc)).status,404,'hidden demo media cannot be retrieved');
  assert.equal((await req(url,'/api/events/'+did,admin)).status,200,'admin can still inspect hidden demo');
  assert.ok(fs.existsSync(path.join(dir,'media',did)));
 });
