@@ -71,7 +71,8 @@ function ef18EditReport(kind){
     const cfg={orientation:$('#ef18Orientation').value,fontSize:Number($('#ef18FontSize').value),
      columns:chosen.map(key=>({key,width:all.find(x=>x.key===key).width}))};
     const c=current();
-    localStorage.setItem('eventflow-pdf-layout-'+kind,JSON.stringify(cfg));
+    const previewTab=download?null:window.open('','_blank');
+    try{localStorage.setItem('eventflow-pdf-layout-'+kind,JSON.stringify(cfg))}catch{}
     const res=await fetch('/api/events/'+c.event.id+'/reports/'+kind+'.pdf',{method:'POST',
       credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
     if(!res.ok){let msg=await res.text();try{msg=JSON.parse(msg).error||msg}catch{}throw Error(msg)}
@@ -79,7 +80,8 @@ function ef18EditReport(kind){
     if(download){
       const a=document.createElement('a');a.href=url;a.download=(c.event.title.replace(/[^a-zA-Z0-9_-]/g,'_')+'_'+kind+'.pdf');
       document.body.append(a);a.click();a.remove();
-    }else window.open(url,'_blank','noopener');
+    }else if(previewTab)previewTab.location.href=url;
+    else toast('The browser blocked the preview tab. Use Download PDF instead.');
     setTimeout(()=>URL.revokeObjectURL(url),30000);
    };
    $('#ef18Preview').onclick=()=>act(()=>generate(false));
