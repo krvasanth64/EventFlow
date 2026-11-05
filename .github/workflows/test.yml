@@ -18,6 +18,8 @@ jobs:
         run: |
           node --check server.js
           node --check workbook.js
+          node --check report-pdf.js
+          node --check public/v18.js
           node --check public/v17.js
           node --check zip.js
           node --check scripts/create-demo.js
