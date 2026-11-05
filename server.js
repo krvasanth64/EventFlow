@@ -163,7 +163,10 @@ if (!db.users.length && seedAdmin) {
   persist();
   console.log('Initial admin account created. Remove the password variable from future startup configurations.');
 }
-if (!db.users.length) console.warn('SETUP REQUIRED: Set EVENTFLOW_ADMIN_PASSWORD before starting. No default password is embedded.');
+if (!db.users.length) {
+  console.error('STARTUP BLOCKED: This data directory contains no users. Verify EVENTFLOW_DATA or set EVENTFLOW_ADMIN_PASSWORD only for a brand-new installation.');
+  process.exit(1);
+}
 const cookieFlags = '; HttpOnly; SameSite=Lax; Path=/' + (SECURE_COOKIES ? '; Secure' : '');
 const cookie = (req, name) => (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith(name + '='))?.slice(name.length + 1);
 function userOf(req) {
