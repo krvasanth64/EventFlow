@@ -280,3 +280,26 @@ audio.ef-source-player{min-height:65px}
  .ef17-filepicker{padding:15px 10px}
  .ef17-buttons>*{flex:1}
 }
+
+
+/* V1.4.8 PDF column designer and sectional workbook imports */
+.ef18-report-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
+.ef18-report-settings label{font-size:12px;font-weight:700}
+.ef18-report-settings select{width:100%;margin-top:7px}
+.ef18-column-list{max-height:min(52vh,520px);overflow:auto;border:1px solid #dfe5f1;border-radius:12px;margin:12px 0}
+.ef18-column{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,135px) 38px 38px;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid #ecf0f6}
+.ef18-column:last-child{border:0}
+.ef18-column:nth-child(even){background:#f7f9fc}
+.ef18-column>label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;min-width:0}
+.ef18-column input[type=checkbox]{accent-color:#4365ad;min-width:18px;width:18px;height:18px;flex:none}
+.ef18-width input{margin:0;padding:7px;width:62px;min-width:50px}
+.ef18-column button{padding:7px;font-weight:800;min-width:32px}
+.ef18-import-buttons{margin:14px 0}
+.ef18-import-buttons a{display:inline-block;padding:10px 12px;text-decoration:none}
+.ef18-validation-errors{margin-top:8px;max-height:200px;overflow-y:auto;color:#a12e3d;background:#fff2f3;border:1px solid #f2cad1;border-radius:8px;padding:9px}
+.ef18-validation-errors p{margin:4px 0;font-size:12px}
+@media(max-width:540px){
+ .ef18-column{grid-template-columns:minmax(0,1fr) 75px 32px 32px;padding:8px 5px;gap:3px}
+ .ef18-width{font-size:10px}.ef18-width input{width:49px;padding:5px}
+ .ef18-column button{min-width:28px;padding:6px}
+}
