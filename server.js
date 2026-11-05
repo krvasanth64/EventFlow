@@ -317,7 +317,7 @@ const server = http.createServer(async (req,res) => {
           }
           manifest.programs.push(item);
         }
-        const csvCell=value=>'"'+String(value??'').replace(/"/g,'""').replace(/\\r?\\n/g,' ')+'"';
+        const csvCell=value=>{const val=String(value??'').replace(/\r?\n/g,' ');return '"'+(/^\s*[=+\-@]/.test(val)?"'"+val:val).replace(/"/g,'""')+'"'};
         const columns=['Order','Program ID','Title','Status','Type','Duration (seconds)','Current media filename','External source'];
         const csv=[columns.map(csvCell).join(','),...manifest.programs.map(p=>[p.order,p.id,p.title,p.status,p.type,p.durationSeconds,p.media.filter(x=>!x.archived).map(x=>x.filename).join('; '),p.externalSource?.reference||''].map(csvCell).join(','))].join('\\r\\n');
         const contents=[
