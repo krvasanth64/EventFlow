@@ -22,6 +22,8 @@ jobs:
           node --check public/v18.js
           node --check public/v19.js
           node --check public/v20.js
+          node --check public/v21.js
+          node --check public/sw.js
           node --check public/v17.js
           node --check zip.js
           node --check scripts/create-demo.js
