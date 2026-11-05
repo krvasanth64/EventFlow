@@ -31,12 +31,17 @@ const safe = s => String(s || '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 75)
 const hash = (password, salt = crypto.randomBytes(16).toString('hex')) =>
   salt + ':' + crypto.scryptSync(String(password), salt, 64).toString('hex');
 function checkPassword(password, stored) {
-  try {
-    const [salt, value] = stored.split(':');
-    const a = Buffer.from(value, 'hex');
-    const b = crypto.scryptSync(String(password), salt, a.length);
-    return a.length === b.length && crypto.timingSafeEqual(a, b);
-  } catch { return false; }
+  return new Promise(resolve=>{
+    try{
+      const [salt,value]=String(stored||'').split(':');
+      if(!/^[a-f0-9]{128}$/.test(value||'')||!/^[a-f0-9]{32}$/.test(salt||''))return resolve(false);
+      const expected=Buffer.from(value,'hex');
+      // Async scrypt: concurrent login requests must never freeze the event's live-update loop.
+      crypto.scrypt(String(password),salt,expected.length,(err,actual)=>{
+        resolve(!err&&actual.length===expected.length&&crypto.timingSafeEqual(expected,actual));
+      });
+    }catch{resolve(false)}
+  });
 }
 const defaultCatalogs = () => ({
  programTypes: ['Solo Dance','Group Dance','Drama','Magic Show','Stand-up Comedy','Speech','Karaoke Singing','Solo Singing','Group Singing','Instrumental Music','DJ Performance','Mime','Awards Ceremony','Welcome Address','Vote of Thanks','Other','speech','dance','music','video','ceremony','break','other'].map(name=>({name,enabled:true})),
@@ -354,7 +359,7 @@ const server = http.createServer(async (req,res) => {
     if (route === '/api/login' && req.method==='POST') {
       const body = await jsonBody(req);
       const u = db.users.find(u => u.username.toLowerCase() === String(body.username || '').toLowerCase() && u.active);
-      if (!u || !checkPassword(body.password, u.password)) fail(401,'Invalid username or password.');
+      if (!u || !(await checkPassword(body.password, u.password))) fail(401,'Invalid username or password.');
       const token = crypto.randomBytes(32).toString('hex');
       sessions.set(tokenKey(token),{userId:u.id,expiry:time()+SESSION_AGE});persistSessions();
       return send(res,200,{user:publicUser(u)}, {'Set-Cookie':'ef_session='+token+cookieFlags+'; Max-Age=43200'});
