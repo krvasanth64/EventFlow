@@ -127,6 +127,15 @@ function migrateCodes(){
     changed=true;
    }
   }
+  for(const award of db.awards.filter(item=>item.eventId===event.id)){
+   if(!Array.isArray(award.participants)){
+    award.participants=award.winnerName?[{
+      id:uid(),employeeCode:String(award.employeeId||''),name:String(award.winnerName),
+      contact:String(award.contact||''),checkedIn:false,checkedAt:null,checkedBy:null
+    }]:[];
+    changed=true;
+   }
+  }
  }
  return changed;
 }
@@ -675,7 +684,7 @@ const server = http.createServer(async (req,res) => {
       if (action==='awards' && req.method==='POST') {
         requireEditor(user,id,req);const b=await jsonBody(req);revision(b,e);
         const details=awardInput(b);
-        const award={id:uid(),eventId:id,awardCode:nextDisplayCode(e,'A'),order:eventAwards(id).length,...details,status:'pending',presentedAt:null};
+        const award={id:uid(),eventId:id,awardCode:nextDisplayCode(e,'A'),order:eventAwards(id).length,...details,status:'pending',presentedAt:null,participants:cleanParticipants([{name:details.winnerName,employeeCode:details.employeeId||'',contact:details.contact||''}])};
         db.awards.push(award);e.revision++;audit('award.created',user,id,award.awardName);
         persist();broadcast(id);return send(res,201,eventResponse(id,user,req));
       }
@@ -689,6 +698,33 @@ const server = http.createServer(async (req,res) => {
             fail(409,'Presented awards cannot be moved during live reordering.');
         b.ids.forEach((awardId,i)=>db.awards.find(a=>a.id===awardId).order=i);
         e.revision++;audit('awards.reordered',user,id);persist();broadcast(id);
+        return send(res,200,eventResponse(id,user,req));
+      }
+      const awardRoster=/^awards\/([a-f0-9-]+)\/participants$/.exec(action);
+      if(awardRoster&&req.method==='PUT'){
+        requireEditor(user,id,req);const body=await jsonBody(req);revision(body,e);
+        const award=db.awards.find(a=>a.eventId===id&&a.id===awardRoster[1]);
+        if(!award)fail(404,'Award not found.');
+        if(award.status==='presented')fail(409,'Presented awards are locked.');
+        award.participants=cleanParticipants(body.participants,award.participants||[]);
+        e.revision++;audit('award.participants.updated',user,id,award.awardCode);
+        persist();broadcast(id);return send(res,200,eventResponse(id,user,req));
+      }
+      const awardCheck=/^awards\/([a-f0-9-]+)\/participants\/([a-f0-9-]+)\/check$/.exec(action);
+      if(awardCheck&&req.method==='POST'){
+        requireLiveOperator(user,id);const body=await jsonBody(req);revision(body,e);
+        if(typeof body.checkedIn!=='boolean')fail(400,'checkedIn must be boolean.');
+        const award=db.awards.find(a=>a.eventId===id&&a.id===awardCheck[1]);
+        if(!award)fail(404,'Award not found.');
+        if(['presented','skipped'].includes(award.status))fail(409,'This award cannot be checked in.');
+        const person=(award.participants||[]).find(x=>x.id===awardCheck[2]);
+        if(!person)fail(404,'Award recipient not found.');
+        if(person.checkedIn!==body.checkedIn){
+          person.checkedIn=body.checkedIn;person.checkedAt=body.checkedIn?ISO():null;
+          person.checkedBy=body.checkedIn?user.username:null;
+          e.revision++;audit('award.participant.'+(body.checkedIn?'checked':'unchecked'),user,id,award.awardCode+' '+person.name);
+          persist();broadcast(id);
+        }
         return send(res,200,eventResponse(id,user,req));
       }
       const awardMatch=/^awards\/([a-f0-9-]+)$/.exec(action);
