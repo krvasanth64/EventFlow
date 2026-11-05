@@ -16,7 +16,7 @@ async function api(url,method='GET',body,opts={}) {const headers={};if(body!==un
   if(!r.ok)throw Error(data.error||('Request failed: '+r.status));return data;
 }
 async function act(fn){try{await fn()}catch(e){toast(e.message)}}
-function showApp(){ $('#loginPage').classList.add('hidden');$('#app').classList.remove('hidden');$('#userName').textContent=state.user.name;$('#userAvatar').textContent=state.user.name.slice(0,1).toUpperCase();$$('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));$$('[data-page="planner"],[data-page="live"]').forEach(x=>x.classList.remove('hidden'));$('#dateNow').textContent=new Date().toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}); }
+function showApp(){ $('#loginPage').classList.add('hidden');$('#app').classList.remove('hidden');$('#userName').textContent=state.user.name;$('#userAvatar').textContent=state.user.name.slice(0,1).toUpperCase();$('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));$('.editor-only').forEach(x=>x.classList.toggle('hidden',!['admin','editor'].includes(state.user.role)));$$('[data-page="planner"],[data-page="live"]').forEach(x=>x.classList.remove('hidden'));$('#dateNow').textContent=new Date().toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}); }
 function showLogin(){state.user=null;state.current=null;state.editing=false;state.stream?.close();clearInterval(state.leaseTimer);clearInterval(state.syncTimer);$('#app').classList.add('hidden');$('#loginPage').classList.remove('hidden')}
 async function restoreLastEvent(){
   let id=null;try{id=localStorage.getItem('eventflow.activeEvent')}catch{}
@@ -36,7 +36,7 @@ $('#globalEventSelect').addEventListener('change',ev=>{
 });
 function modal(title,html,setup,eyebrow='EVENTFLOW'){ $('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML=html;$('#modal').showModal();setup?.($('#modalBody')) }
 function closeModal(){$('#modal').close()}
-function navigate(page){if(page==='users'&&state.user.role!=='admin')return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',timeline:'LED Timeline',prep:'Participants · Next 4',users:'Team & Access'}[page];render();}
+function navigate(page){if(page==='users'&&state.user.role!=='admin')return;if(page==='import'&&!['admin','editor'].includes(state.user.role))return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',timeline:'LED Timeline',prep:'Participants · Next 4',import:'Excel Import & Demo',users:'Team & Access'}[page];render();}
 function updateEventPicker(){
   const picker=$('#globalEventSelect');
   if(!picker)return;
