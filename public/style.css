@@ -325,3 +325,50 @@ audio.ef-source-player{min-height:65px}
  .ef19-page-actions{width:100%}
  .ef19-page-actions button{padding:8px 10px}
 }
+
+
+/* V1.5.0 — large-format LED: on-stage, next four, award recipient readiness */
+.ef20-led-shell{max-width:1600px;margin:auto;padding:24px}
+.ef20-led-main-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px;margin-top:14px}
+.ef20-led-stage{border-radius:18px;background:linear-gradient(135deg,#172340,#29467a);color:#fff;padding:clamp(20px,3vw,38px);min-height:355px;display:flex;flex-direction:column}
+.ef20-led-stage-label{letter-spacing:2px;font-size:12px;font-weight:900;color:#b0e6cb}
+.ef20-led-live-code{font-weight:800;color:#87e6ae;margin-top:22px;letter-spacing:.6px}
+.ef20-led-stage h2{font-size:clamp(25px,3.1vw,50px);line-height:1.13;margin:12px 0;overflow-wrap:anywhere}
+.ef20-led-stage>p{color:#d8e4f4;font-size:clamp(14px,1.5vw,20px)}
+.ef20-led-stage .ef14-led-clock{margin-top:auto;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ef20-led-stage .ef14-led-clock div{color:#d9e4f5;font-weight:800;font-size:11px}
+.ef20-led-stage .ef14-led-clock strong{color:#fff;font-size:clamp(25px,3.2vw,44px);font-variant-numeric:tabular-nums}
+.ef20-led-upcoming{min-width:0}
+.ef20-led-upcoming h3{font-size:13px;letter-spacing:1px;color:#5263ae;margin-bottom:10px}
+.ef20-led-program{border:1px solid #e0e5ef;background:#fff;border-radius:12px;padding:12px 16px;margin-bottom:8px}
+.ef20-led-program-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
+.ef20-led-number{background:#e3eaff;color:#42599b;border-radius:8px;padding:4px 9px;font-weight:900}
+.ef20-led-code{font-weight:900;color:#3d4f73;font-variant-numeric:tabular-nums}
+.ef20-led-ready{margin-left:auto;color:#9a631e;background:#fff1d4;border-radius:30px;padding:5px 9px;font-weight:900;white-space:nowrap}
+.ef20-led-ready-full{background:#dcf8e7;color:#127048}
+.ef20-led-program h2{font-size:clamp(18px,1.7vw,27px);line-height:1.15;margin:9px 0 5px;overflow-wrap:anywhere}
+.ef20-led-program p{color:#738198;font-size:12px}
+.ef20-led-awards{margin-top:16px;border:1px solid #dce5f1;background:#f5f8ff;border-radius:18px;padding:16px}
+.ef20-led-awards-heading{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+.ef20-led-awards-heading h3{font-size:13px;letter-spacing:1px;color:#465c9b}
+.ef20-led-awards-heading span{font-size:12px;color:#137e52;font-weight:900}
+.ef20-led-awards-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.ef20-led-award{padding:12px;border-radius:12px;border:1px solid #cae7d6;background:#fff;min-width:0;display:grid;gap:7px}
+.ef20-led-award-id{color:#137b53;font-weight:900;font-size:12px}
+.ef20-led-award-title{color:#203656;font-size:clamp(13px,1.25vw,20px);font-weight:850;overflow-wrap:anywhere}
+.ef20-led-award-winner{color:#63738c;font-size:13px;overflow-wrap:anywhere}
+.ef20-led-award-ready{color:#198459;font-weight:900;font-size:12px}
+.ef20-award-prep{margin-top:30px}
+.ef20-backstage-title{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.ef20-backstage-title h2{font-size:22px;margin:5px 0}
+.ef20-award-total{border-radius:18px;color:#19724d;background:#d9f6e6;padding:8px 12px;font-weight:850}
+.ef20-award-prep-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.ef20-award-prep-card{min-width:0;background:#fff;border:1px solid #dfe7f2;border-top:4px solid #687cc0;border-radius:12px;padding:15px}
+.ef20-award-prep-head{display:flex;justify-content:space-between;align-items:start;gap:12px}
+.ef20-award-prep-head h3{font-size:17px;margin:7px 0 3px;overflow-wrap:anywhere}
+.ef20-award-prep-head small{color:#7b8799}
+.ef20-award-winner{font-size:13px;font-weight:700;margin:8px 0}
+.ef20-award-people{display:grid;gap:6px}
+.ef20-edit-award-roster{margin-top:12px}
+@media(max-width:950px){.ef20-led-main-grid{grid-template-columns:1fr}.ef20-led-awards-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ef20-award-prep-grid{grid-template-columns:1fr}}
+@media(max-width:530px){.ef20-led-shell{padding:8px}.ef20-led-awards-grid{grid-template-columns:1fr}.ef20-led-stage{min-height:260px}.ef20-led-program{padding:12px}}
