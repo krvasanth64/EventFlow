@@ -3,6 +3,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 const { URL } = require('node:url');
 const {streamZip,mediaFiles}=require('./zip');
 const {createTemplate,parseWorkbook,createSectionTemplate,parseSectionWorkbook}=require('./workbook');
@@ -186,8 +187,21 @@ function userOf(req) {
 }
 function send(res, status, body, headers = {}) {
   const isObject = typeof body !== 'string' && !Buffer.isBuffer(body);
-  res.writeHead(status, { 'Content-Type': isObject ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8', 'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff', ...headers });
-  res.end(isObject ? JSON.stringify(body) : body);
+  const payload = isObject ? JSON.stringify(body) : body;
+  const base = {'Content-Type':isObject?'application/json; charset=utf-8':'text/plain; charset=utf-8',
+    'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',...headers};
+  // Compress JSON only; never compress already encoded ZIP/PDF/Excel or media streams.
+  // Response-specific no-store remains in place for ALL authenticated user data.
+  const accept=String(res.req?.headers?.['accept-encoding']||'');
+  const compressible=isObject&&Buffer.byteLength(payload)>1024&&/\bgzip\b/.test(accept)&&status>=200&&status<300;
+  if(compressible){
+    const output=zlib.gzipSync(payload,{level:zlib.constants.Z_BEST_SPEED});
+    res.writeHead(status,{...base,'Content-Encoding':'gzip','Vary':'Accept-Encoding',
+      'Content-Length':output.length});
+    return res.end(output);
+  }
+  res.writeHead(status,base);
+  return res.end(payload);
 }
 const fail = (status, message) => { const err = new Error(message); err.status = status; throw err; };
 function need(user, roles) {
@@ -286,9 +300,11 @@ function eventResponse(id, user, req) {
     lock: lock ? { user:db.users.find(u => u.id===lock.userId)?.name || 'Unknown', mine:isEditor(user,id,cookie(req,'ef_session')), expires:lock.expires } : null };
 }
 const mime = ext => ({ '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.ico':'image/x-icon','.mp3':'audio/mpeg','.mp4':'video/mp4','.webm':'video/webm','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.mov':'video/quicktime','.pdf':'application/pdf','.webmanifest':'application/manifest+json' })[ext] || 'application/octet-stream';
-function streamFile(req, res, file, allowRange=false) {
+function streamFile(req, res, file, allowRange=false, staticAsset=false) {
   const stat = fs.statSync(file); const type = mime(path.extname(file).toLowerCase());
-  const h = { 'Content-Type':type, 'Accept-Ranges': allowRange ? 'bytes':'none', 'X-Content-Type-Options':'nosniff', 'Cache-Control':'no-store' };
+  const longCache=staticAsset&&req.url.includes('?')&&new URL(req.url,'http://localhost').searchParams.has('v');
+  const h = { 'Content-Type':type, 'Accept-Ranges': allowRange ? 'bytes':'none',
+    'X-Content-Type-Options':'nosniff','Cache-Control':longCache?'public, max-age=604800, immutable':'no-store' };
   if (allowRange && req.headers.range) {
     const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
     if (!match) return send(res,416,'Invalid range',{ 'Content-Range':'bytes */'+stat.size });
@@ -945,10 +961,10 @@ const server = http.createServer(async (req,res) => {
       const file=path.join(MEDIA,relative);if(!fs.existsSync(file))fail(404,'Missing file.');
       return streamFile(req,res,file,true);
     }
-    if(['GET','HEAD'].includes(req.method) && (route==='/' || /^\/(index\.html|manifest\.webmanifest|app\.js|extensions\.js|v12\.js|v13\.js|v14\.js|v15\.js|v16\.js|v17\.js|v18\.js|v19\.js|v20\.js|style\.css|icon\.svg)$/.test(route))) {
+    if(['GET','HEAD'].includes(req.method) && (route==='/' || /^\/(index\.html|manifest\.webmanifest|app\.js|extensions\.js|v12\.js|v13\.js|v14\.js|v15\.js|v16\.js|v17\.js|v18\.js|v19\.js|v20\.js|v21\.js|sw\.js|style\.css|icon\.svg)$/.test(route))) {
       const name=route==='/'?'index.html':route.slice(1);
       const file=path.join(PUBLIC,name);if(!fs.existsSync(file))fail(404,'Asset not found.');
-      return streamFile(req,res,file);
+      return streamFile(req,res,file,false,route!=='/'&&route!=='/index.html'&&route!=='/sw.js');
     }
     return send(res,404,{error:'Route not found.'});
   } catch(err) {
