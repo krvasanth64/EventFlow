@@ -327,7 +327,7 @@ const server = http.createServer(async (req,res) => {
       if (['dj-links.csv','dj-links.html'].includes(action) && req.method==='GET') {
         need(user,['admin','editor','live_controller']);
         const rows=eventPrograms(id).map((p,i)=>({
-          order:i+1,id:p.id,title:p.title,status:p.status,type:p.type,
+          order:i+1,programCode:p.programCode,id:p.id,title:p.title,status:p.status,type:p.type,
           category:p.category||'',sourceType:p.sourceType||'none',
           sourceURL:p.sourceType==='url'&&/^https?:\/\//i.test(String(p.source||''))?p.source:'',
           linkedReference:p.sourceType==='linked'?p.source||'':'',
@@ -339,8 +339,8 @@ const server = http.createServer(async (req,res) => {
           const protectedValue=/^[\s]*[=+\-@\t\r]/.test(value)?"'"+value:value;
           return '"'+protectedValue.replace(/"/g,'""')+'"';
         };
-        const csv=[['Order','Program ID','Program Title','Status','Category','Program Type','Source Type','External URL','Linked Reference','Uploaded File','Duration Seconds'].map(escapeCSV).join(','),
-          ...rows.map(p=>[p.order,p.id,p.title,p.status,p.category,p.type,p.sourceType,p.sourceURL,p.linkedReference,p.fileName,p.durationSeconds].map(escapeCSV).join(','))].join('\r\n');
+        const csv=[['Order','Program Code','Program ID','Program Title','Status','Category','Program Type','Source Type','External URL','Linked Reference','Uploaded File','Duration Seconds'].map(escapeCSV).join(','),
+          ...rows.map(p=>[p.order,p.programCode,p.id,p.title,p.status,p.category,p.type,p.sourceType,p.sourceURL,p.linkedReference,p.fileName,p.durationSeconds].map(escapeCSV).join(','))].join('\r\n');
         const filename=safe(e.title)+'_'+id.slice(0,8)+'_DJ_URLS';
         if(action==='dj-links.csv')
           return send(res,200,csv,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="'+filename+'.csv"'});
@@ -349,7 +349,7 @@ const server = http.createServer(async (req,res) => {
           '<title>'+escHtml(e.title)+' — DJ Links</title><style>body{font:16px system-ui;margin:2rem auto;padding:0 1rem;max-width:1100px;color:#18223a}h1{overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #d8e0eb;text-align:left;padding:12px 9px;overflow-wrap:anywhere}th{background:#f2f5fc}a{color:#2356b9}small{color:#5f6e83}@media(max-width:650px){table{font-size:13px}th,td{padding:8px 4px}}</style></head><body>'+
           '<h1>'+escHtml(e.title)+' — DJ Link Sheet</h1><small>Program order and external references. Internet access may be required. Only http(s) source URLs are clickable; local linked references must be opened on their own host.</small>'+
           '<table><thead><tr><th>#</th><th>Program</th><th>Status</th><th>Source</th></tr></thead><tbody>'+
-          rows.map(p=>'<tr><td>'+p.order+'</td><td><strong>'+escHtml(p.title)+'</strong><br><small>'+escHtml(p.category)+'</small></td><td>'+escHtml(p.status)+'</td><td>'+
+          rows.map(p=>'<tr><td>'+p.order+'</td><td><strong>'+escHtml(p.programCode||'')+' · '+escHtml(p.title)+'</strong><br><small>'+escHtml(p.category)+'</small></td><td>'+escHtml(p.status)+'</td><td>'+
             (p.sourceURL?'<a href="'+escHtml(p.sourceURL)+'" target="_blank" rel="noopener noreferrer">Open URL</a><br><small>'+escHtml(p.sourceURL)+'</small>':
              p.fileName?'Uploaded media: '+escHtml(p.fileName):
              p.linkedReference?'Host reference: '+escHtml(p.linkedReference):'No media')+'</td></tr>').join('')+
