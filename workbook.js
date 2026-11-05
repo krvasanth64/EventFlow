@@ -27,6 +27,8 @@ function makeSheet(book,name,data){
  ws.getRow(1).eachCell(cell=>{cell.font={bold:true,color:{argb:'FFFFFFFF'},size:11};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF243655'}};cell.alignment={vertical:'middle',wrapText:true}});
  ws.columns=HEADERS[name].map(h=>({width:Math.max(18,Math.min(h.length+5,32))}));
  for(let i=2;i<=ws.rowCount;i++){ws.getRow(i).height=24;ws.getRow(i).eachCell(c=>{c.font={color:{argb:'FF1855A2'}};c.alignment={vertical:'middle'};if(i%2===0)c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F6FC'}}})}
+ const textColumns=name==='Event'?[1,2,3]:name==='Programs'?[1,8,9]:name==='Participants'?[1,2,4]:[5,6];
+ for(const col of textColumns)for(let i=2;i<=500;i++)ws.getRow(i).getCell(col).numFmt='@';
  ws.autoFilter={from:{row:1,column:1},to:{row:1,column:HEADERS[name].length}};
 }
 function exampleData(full=false){
