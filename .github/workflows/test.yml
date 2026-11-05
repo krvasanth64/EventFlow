@@ -21,6 +21,7 @@ jobs:
           node --check report-pdf.js
           node --check public/v18.js
           node --check public/v19.js
+          node --check public/v20.js
           node --check public/v17.js
           node --check zip.js
           node --check scripts/create-demo.js
@@ -34,3 +35,22 @@ jobs:
           node --check public/v16.js
       - name: API integration tests
         run: npm test
+
+  docker-staging-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production-style Coolify image
+        run: docker build --pull -t eventflow:staging-smoke .
+      - name: Start isolated test container and check startup
+        run: |
+          docker run -d --name eventflow-staging-smoke \
+            -p 127.0.0.1:18765:8765 \
+            -e EVENTFLOW_ADMIN_PASSWORD=ci-staging-test-only-password \
+            eventflow:staging-smoke
+          curl --fail --retry 15 --retry-delay 2 --retry-connrefused \
+            http://127.0.0.1:18765/api/health
+      - name: Clean up
+        if: always()
+        run: docker rm -f eventflow-staging-smoke || true
