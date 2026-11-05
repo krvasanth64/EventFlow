@@ -171,6 +171,14 @@ $('#printReport')?.addEventListener('click',printSheet);
    a.href='/api/events/'+encodeURIComponent(c.event.id)+'/dj-package';
    a.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
    $('#pageReports').prepend(a);
+   const urlCsv=document.createElement('a');urlCsv.className='secondary';urlCsv.textContent='Export DJ URLs (CSV)';
+   urlCsv.href='/api/events/'+encodeURIComponent(c.event.id)+'/dj-links.csv';
+   urlCsv.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
+   $('#pageReports').prepend(urlCsv);
+   const html=document.createElement('a');html.className='secondary';html.textContent='Export clickable DJ links (HTML)';
+   html.href='/api/events/'+encodeURIComponent(c.event.id)+'/dj-links.html';
+   html.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
+   $('#pageReports').prepend(html);
  }
  if(state.user.role==='admin'){
    const a=document.createElement('a');a.className='secondary';a.textContent='Download complete backup (ZIP)';
