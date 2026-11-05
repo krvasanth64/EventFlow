@@ -51,5 +51,5 @@ test('V1.3 catalogs, archived media versions and accessible source archive',asyn
  assert.equal(c.data.programs[0].sourceArchive.length,2);
  assert.equal((await fetch(host+'/media/'+first,{headers:{Cookie:cookie}})).status,200);
  assert.equal((await fetch(host+'/v13.js')).status,200);
- assert.equal((await api('/api/health')).data.version,'1.3.0');
+ assert.equal((await api('/api/health')).data.version,require('../package.json').version);
 });

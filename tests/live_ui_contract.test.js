@@ -1,0 +1,24 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8');
+test('live awards selectors, skipped restore UI, and V1.4.3 asset wiring contract',()=>{
+ const awards=read('public/v12.js');
+ const skipped=read('public/v15.js');
+ const html=read('public/index.html');
+ const server=read('server.js');
+ for(const name of ['edit','done','pending']){
+  assert.ok(awards.includes("$$('[data-award-"+name+"]',list).forEach("),'award action uses list selector '+name);
+  assert.ok(!awards.split('\n').some(line=>line.trimStart().startsWith("$('[data-award-"+name+"]',list).forEach(")),'no nullable single-node forEach '+name);
+ }
+ const app=read('public/app.js');
+ assert.ok(app.includes("$('.admin-only').forEach"),'Admin navigation must bind through collection selector');
+ assert.ok(app.includes("$('.editor-only').forEach"),'Editor navigation must bind through collection selector');
+ assert.ok(awards.includes('application/x-eventflow-award'),'drag/drop uses distinct award MIME key');
+ assert.ok(skipped.includes('ef15SkippedPanel'),'separate skipped panel is installed');
+ assert.ok(skipped.includes('Restore to Upcoming'),'restore action exists');
+ assert.ok(html.includes('/v15.js?v='+require('../package.json').version),'new script is included at current release version');
+ assert.ok(server.includes('v15\\.js'),'new script is served');
+});

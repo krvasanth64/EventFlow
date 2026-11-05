@@ -1,0 +1,111 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
+const {spawn}=require('node:child_process');
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const port=()=>new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})});
+test('stable per-event P/A codes, participant roster and live readiness survive reorder and restart',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eventflow-people-'));
+ const n=await port(),base='http://127.0.0.1:'+n;
+ let srv;
+ const start=async()=>{
+  srv=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env:{...process.env,EVENTFLOW_DATA:dir,HOST:'127.0.0.1',PORT:String(n),EVENTFLOW_ADMIN_PASSWORD:'testPassword123'},stdio:'pipe'});
+  for(let i=0;i<90;i++){try{if((await fetch(base+'/api/health')).ok)return}catch{}await delay(80)}
+  throw Error('server did not start');
+ };
+ t.after(()=>{srv?.kill();fs.rmSync(dir,{recursive:true,force:true})});
+ async function request(route,method='GET',payload,cookie){
+  const res=await fetch(base+route,{method,headers:{...(cookie?{Cookie:cookie}:{}),...(payload?{'Content-Type':'application/json'}:{})},body:payload?JSON.stringify(payload):undefined});
+  return {status:res.status,data:await res.json(),cookie:res.headers.get('set-cookie')?.split(';')[0]};
+ }
+ await start();
+ let login=await request('/api/login','POST',{username:'admin',password:'testPassword123'}),admin=login.cookie;
+ const makeEvent=title=>request('/api/events','POST',{title,date:'2026-11-22',start:'18:00'},admin);
+ const e1=(await makeEvent('First Show')).data.event,e2=(await makeEvent('Second Show')).data.event;
+ let c=(await request('/api/events/'+e1.id+'/lease','POST',{},admin)).data;
+ const addProgram=async title=>{const x=await request('/api/events/'+e1.id+'/programs','POST',{revision:c.event.revision,title,type:'Dance',duration:200,gap:10,sourceType:'none'},admin);assert.equal(x.status,201);c=x.data;return c.programs.find(p=>p.title===title)};
+ const p1=await addProgram('Welcome Dance'),p2=await addProgram('Comedy'),p3=await addProgram('Final Song');
+ assert.deepEqual(c.programs.map(p=>p.programCode),['P0001','P0002','P0003']);
+ const addAward=async name=>{const x=await request('/api/events/'+e1.id+'/awards','POST',{revision:c.event.revision,category:'General',awardName:name,winnerName:'Winner'},admin);assert.equal(x.status,201);c=x.data;return c.awards.find(a=>a.awardName===name)};
+ const a1=await addAward('Best Person'),a2=await addAward('Best Team');
+ assert.deepEqual(c.awards.map(a=>a.awardCode),['A0001','A0002']);
+ const anotherLease=await request('/api/events/'+e2.id+'/lease','POST',{},admin);
+ const other=await request('/api/events/'+e2.id+'/programs','POST',{revision:anotherLease.data.event.revision,title:'Other Program',type:'Speech',duration:100,gap:0,sourceType:'none'},admin);
+ assert.equal(other.data.programs[0].programCode,'P0001','codes are independently scoped per event');
+ const order=await request('/api/events/'+e1.id+'/reorder','POST',{revision:c.event.revision,ids:[p3.id,p2.id,p1.id]},admin);
+ assert.equal(order.status,200);c=order.data;
+ assert.deepEqual(c.programs.map(x=>x.programCode),['P0003','P0002','P0001'],'display codes never track order');
+ const awardOrder=await request('/api/events/'+e1.id+'/awards/reorder','POST',{revision:c.event.revision,ids:[a2.id,a1.id]},admin);
+ assert.equal(awardOrder.status,200);c=awardOrder.data;
+ assert.deepEqual(c.awards.map(x=>x.awardCode),['A0002','A0001']);
+ const rows=[{name:'Person A',employeeCode:'E-101',contact:'9999999991'},{name:'Person B',employeeCode:'E-102',contact:'9999999992'}];
+ let updated=await request('/api/events/'+e1.id+'/programs/'+p2.id+'/participants','PUT',{revision:c.event.revision,participants:rows},admin);
+ assert.equal(updated.status,200);c=updated.data;
+ const roster=c.programs.find(x=>x.id===p2.id).participants;
+ assert.equal(roster.length,2);assert.ok(roster.every(x=>x.id&&x.checkedIn===false));
+ updated=await request('/api/events/'+e1.id+'/programs/'+p2.id+'/participants','PUT',{revision:c.event.revision,participants:[rows[0],rows[0]]},admin);
+ assert.equal(updated.status,409,'duplicate employee code prevented');
+ const newUser=await request('/api/users','POST',{username:'floorlive',name:'Floor Live',password:'testPassword123',role:'live_controller'},admin);
+ assert.equal(newUser.status,201);
+ const floorLogin=await request('/api/login','POST',{username:'floorlive',password:'testPassword123'}),floor=floorLogin.cookie;
+ const denied=await request('/api/events/'+e1.id+'/programs/'+p2.id+'/participants','PUT',{revision:c.event.revision,participants:rows},floor);
+ assert.equal(denied.status,403,'live operator cannot edit participants');
+ const startLive=await request('/api/events/'+e1.id+'/live','POST',{programId:p3.id,action:'start',revision:c.event.revision},floor);
+ assert.equal(startLive.status,200);c=startLive.data;
+ const check=await request('/api/events/'+e1.id+'/programs/'+p2.id+'/participants/'+roster[0].id+'/check','POST',{revision:c.event.revision,checkedIn:true},floor);
+ assert.equal(check.status,200);c=check.data;
+ const checked=c.programs.find(x=>x.id===p2.id).participants[0];
+ assert.equal(checked.checkedIn,true);assert.equal(checked.checkedBy,'floorlive');assert.ok(checked.checkedAt);
+ assert.equal(c.programs.find(x=>x.id===p3.id).status,'running','participant check does not alter live program');
+ const stale=await request('/api/events/'+e1.id+'/programs/'+p2.id+'/participants/'+roster[1].id+'/check','POST',{revision:startLive.data.event.revision,checkedIn:true},floor);
+ assert.equal(stale.status,409);
+ const oldId=checked.id;
+ const amend=await request('/api/events/'+e1.id+'/programs/'+p2.id+'/participants','PUT',{revision:c.event.revision,participants:[{...rows[0],id:oldId}, {...rows[1],id:roster[1].id}]},admin);
+ assert.equal(amend.status,200);c=amend.data;
+ assert.equal(c.programs.find(x=>x.id===p2.id).participants[0].checkedIn,true,'check preserved while editing roster');
+ const del=await request('/api/events/'+e1.id+'/programs/'+p1.id,'DELETE',{revision:c.event.revision},admin);
+ assert.equal(del.status,200);c=del.data;
+ const last=await addProgram('Late Addition');
+ assert.equal(last.programCode,'P0004','deleted display codes are not reused');
+ const exported=await request('/api/events/'+e1.id+'/export','GET',undefined,admin).catch(()=>null);
+ // JSON export is a download, so validate the saved database directly.
+ assert.ok(fs.existsSync(path.join(dir,'data.json')));
+ srv.kill();await delay(250);await start();
+ login=await request('/api/login','POST',{username:'admin',password:'testPassword123'});admin=login.cookie;
+ const restored=await request('/api/events/'+e1.id,'GET',undefined,admin);
+ assert.equal(restored.status,200);
+ assert.equal(restored.data.programs.find(x=>x.id===p2.id).programCode,'P0002');
+ assert.equal(restored.data.programs.find(x=>x.id===p2.id).participants[0].checkedIn,true);
+ assert.equal(restored.data.awards.find(x=>x.id===a1.id).awardCode,'A0001');
+});
+
+
+test('legacy event receives stable P/A codes and retains existing employee contact',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eventflow-migrate-')),n=await port();
+ t.after(()=>fs.rmSync(dir,{force:true,recursive:true}));
+ const eventId='11111111-1111-4111-8111-111111111111';
+ const pId='22222222-2222-4222-8222-222222222222';
+ const aId='33333333-3333-4333-8333-333333333333';
+ fs.writeFileSync(path.join(dir,'data.json'),JSON.stringify({version:1,revision:10,users:[],
+  events:[{id:eventId,title:'Legacy Event',date:'2026-11-20',start:'09:00',revision:1,status:'draft'}],
+  programs:[{id:pId,eventId,order:0,title:'Historical Speech',type:'speech',category:'Speech',duration:100,gap:0,sourceType:'none',source:'',
+   status:'pending',employeeId:'EMP-001',employeeName:'Legacy Participant',contact:'9000000001'}],
+  awards:[{id:aId,eventId,order:0,category:'Team',awardName:'Legacy Award',winnerName:'Legacy Winner',status:'pending'}],
+  history:[]}),{mode:0o600});
+ const child=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),
+  env:{...process.env,EVENTFLOW_DATA:dir,HOST:'127.0.0.1',PORT:String(n),EVENTFLOW_ADMIN_PASSWORD:'testPassword123'},stdio:'pipe'});
+ t.after(()=>child.kill());
+ const base='http://127.0.0.1:'+n;
+ let ready=false;
+ for(let i=0;i<80;i++){try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}await delay(70)}
+ assert.equal(ready,true,'legacy server starts successfully');
+ const disk=JSON.parse(fs.readFileSync(path.join(dir,'data.json'),'utf8'));
+ assert.equal(disk.programs[0].id,pId,'stable internal UUID remains unchanged');
+ assert.equal(disk.programs[0].programCode,'P0001');
+ assert.equal(disk.awards[0].id,aId,'stable internal award UUID remains unchanged');
+ assert.equal(disk.awards[0].awardCode,'A0001');
+ assert.equal(disk.programs[0].participants.length,1);
+ assert.deepEqual([disk.programs[0].participants[0].employeeCode,disk.programs[0].participants[0].name,disk.programs[0].participants[0].contact],
+  ['EMP-001','Legacy Participant','9000000001']);
+});

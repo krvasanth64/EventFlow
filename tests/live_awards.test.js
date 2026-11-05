@@ -73,6 +73,10 @@ test('live start pause resume stop and finish plus independent award planning',a
  assert.equal(result.status,200);
  assert.equal(result.body.awards.find(a=>a.id===awardId).status,'presented');
  assert.ok(result.body.awards.find(a=>a.id===awardId).presentedAt);
+ const cannotMovePresented=await call('/api/events/'+id+'/awards/reorder','POST',
+  {revision:result.body.event.revision,ids:result.body.awards.map(a=>a.id).reverse()},token);
+ assert.equal(cannotMovePresented.status,409,'presented awards remain fixed in live reorder');
+
  const disk=JSON.parse(fs.readFileSync(path.join(folder,'data.json'),'utf8'));
  assert.equal(disk.awards.length,2);
  assert.equal(disk.programs.filter(a=>a.status==='done').length,2);

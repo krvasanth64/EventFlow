@@ -12,12 +12,70 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
       - name: Syntax checks
         run: |
           node --check server.js
+          node --check workbook.js
+          node --check report-pdf.js
+          node --check public/v18.js
+          node --check public/v19.js
+          node --check public/v20.js
+          node --check public/v21.js
+          node --check public/v22.js
+          node --check public/sw.js
+          node --check public/v17.js
+          node --check zip.js
+          node --check scripts/create-demo.js
+          node --check scripts/verify-backup.js
           node --check public/app.js
           node --check public/extensions.js
           node --check public/v12.js
           node --check public/v13.js
+          node --check public/v14.js
+          node --check public/v15.js
+          node --check public/v16.js
       - name: API integration tests
         run: npm test
+
+  docker-staging-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production-style Coolify image
+        run: docker build --pull -t eventflow:staging-smoke .
+      - name: Start isolated test container, health and persistence checks
+        run: |
+          docker volume create eventflow-ci-volume
+          docker run -d --name eventflow-staging-smoke \
+            --mount source=eventflow-ci-volume,target=/data \
+            -p 127.0.0.1:18765:8765 \
+            -e EVENTFLOW_ADMIN_PASSWORD=ci-staging-test-only-password \
+            eventflow:staging-smoke
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:18765/api/health; then
+              break
+            fi
+            if [ "$i" -eq 30 ]; then docker logs eventflow-staging-smoke; exit 1; fi
+            sleep 1
+          done
+          docker rm -f eventflow-staging-smoke
+          docker run -d --name eventflow-staging-smoke \
+            --mount source=eventflow-ci-volume,target=/data \
+            -p 127.0.0.1:18765:8765 \
+            eventflow:staging-smoke
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18765/api/health | grep -q '"users":1'; then
+              echo "Persisted admin and database survived container restart"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then docker logs eventflow-staging-smoke; exit 1; fi
+            sleep 1
+          done
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f eventflow-staging-smoke || true
+          docker volume rm eventflow-ci-volume || true

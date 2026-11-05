@@ -16,7 +16,7 @@ async function api(url,method='GET',body,opts={}) {const headers={};if(body!==un
   if(!r.ok)throw Error(data.error||('Request failed: '+r.status));return data;
 }
 async function act(fn){try{await fn()}catch(e){toast(e.message)}}
-function showApp(){ $('#loginPage').classList.add('hidden');$('#app').classList.remove('hidden');$('#userName').textContent=state.user.name;$('#userAvatar').textContent=state.user.name.slice(0,1).toUpperCase();$$('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));$$('[data-page="planner"],[data-page="live"]').forEach(x=>x.classList.remove('hidden'));$('#dateNow').textContent=new Date().toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}); }
+function showApp(){ $('#loginPage').classList.add('hidden');$('#app').classList.remove('hidden');$('#userName').textContent=state.user.name;$('#userAvatar').textContent=state.user.name.slice(0,1).toUpperCase();$$('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));$$('.editor-only').forEach(x=>x.classList.toggle('hidden',!['admin','editor'].includes(state.user.role)));$$('[data-page="planner"],[data-page="live"]').forEach(x=>x.classList.remove('hidden'));$('#dateNow').textContent=new Date().toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}); }
 function showLogin(){state.user=null;state.current=null;state.editing=false;state.stream?.close();clearInterval(state.leaseTimer);clearInterval(state.syncTimer);$('#app').classList.add('hidden');$('#loginPage').classList.remove('hidden')}
 async function restoreLastEvent(){
   let id=null;try{id=localStorage.getItem('eventflow.activeEvent')}catch{}
@@ -24,8 +24,20 @@ async function restoreLastEvent(){
   if(chosen){try{await loadEvent(chosen.id,false)}catch{state.current=null}}
   updateEventPicker();
 }
-async function initialize(){try{const r=await api('/api/me');state.user=r.user;showApp();await refreshEvents();await restoreLastEvent();navigate('dashboard');connectStream()}catch{showLogin()}}
-$('#loginForm').addEventListener('submit',e=>{e.preventDefault();act(async()=>{const f=new FormData(e.target);const x=await api('/api/login','POST',Object.fromEntries(f));state.user=x.user;showApp();await refreshEvents();await restoreLastEvent();navigate('dashboard');connectStream()})});
+async function initialize(){
+ try{
+  const r=await api('/api/me');state.user=r.user;showApp();
+  // A browser may remain logged in after a Node restart; select an event afresh.
+  navigate('dashboard');connectStream();
+  await refreshEvents();renderDashboard();
+ }catch(e){
+  // Do not replace the active workspace with login on a transient network error.
+  if(e?.message==='Please sign in.')showLogin();
+  else if(!state.user)showLogin();
+  else toast('Connection interrupted. Your session will reconnect.');
+ }
+}
+$('#loginForm').addEventListener('submit',e=>{e.preventDefault();act(async()=>{const f=new FormData(e.target);const x=await api('/api/login','POST',Object.fromEntries(f));state.user=x.user;state.current=null;state.selected=null;state.editing=false;showApp();navigate('dashboard');connectStream();await refreshEvents();renderDashboard()})});
 $('#logout').onclick=()=>act(async()=>{await api('/api/logout','POST',{});showLogin()});
 $$('[data-page]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
 $('#closeModal').onclick=()=>$('#modal').close();
@@ -36,7 +48,7 @@ $('#globalEventSelect').addEventListener('change',ev=>{
 });
 function modal(title,html,setup,eyebrow='EVENTFLOW'){ $('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML=html;$('#modal').showModal();setup?.($('#modalBody')) }
 function closeModal(){$('#modal').close()}
-function navigate(page){if(page==='users'&&state.user.role!=='admin')return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',users:'Team & Access'}[page];render();}
+function navigate(page){if((page==='users'||page==='manage')&&state.user.role!=='admin')return;if(page==='import'&&!['admin','editor'].includes(state.user.role))return;state.page=page;$$('.page').forEach(x=>x.classList.add('hidden'));$('#page'+titleCase(page)).classList.remove('hidden');$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#topTitle').textContent={dashboard:'Overview',planner:'Program Planner',live:'Live Control',awards:'Award Planner',reports:'Reports',timeline:'LED Timeline',prep:'Participants · Next 4',import:'Excel Import & Demo',users:'Team & Access',manage:'Event Management'}[page];render();}
 function updateEventPicker(){
   const picker=$('#globalEventSelect');
   if(!picker)return;
@@ -54,28 +66,75 @@ function showEventChooser(page,title){
   (!state.events.length?'<div class="empty"><strong>No events registered</strong>Go to Overview to create your first event.</div>':'');
   $$('[data-choose]',target).forEach(b=>b.onclick=()=>selectEvent(b.dataset.choose,page));
 }
-async function syncWorkspace(){if(!state.user)return;await refreshEvents();if(state.current){try{await loadEvent(state.current.event.id,false)}catch(e){if(e.message==='Event not found.'){state.current=null;state.selected=null;try{localStorage.removeItem('eventflow.activeEvent')}catch{};updateEventPicker();state.page='dashboard';navigate('dashboard');return}throw e}}render()}
-function connectStream(){
-  state.stream?.close();
-  clearInterval(state.leaseTimer);
-  clearInterval(state.syncTimer);
-  const s=new EventSource('/api/stream');
-  state.stream=s;
-  const status=$('#connectionStatus');
-  status.textContent='Connecting…';
-  s.onopen=()=>{if(state.stream===s)status.textContent='Live connected'};
-  s.onerror=()=>{if(state.stream===s)status.textContent='Sync via polling'};
-  s.onmessage=()=>act(syncWorkspace);
-  // Keep LAN/Tailscale viewers current if a proxy or browser interrupts the event stream.
-  state.syncTimer=setInterval(()=>{if(state.user)act(syncWorkspace)},15000);
-  state.leaseTimer=setInterval(()=>{if(state.editing&&state.current)api('/api/events/'+state.current.event.id+'/lease/renew','POST',{}).catch(()=>{state.editing=false;render()})},30000);
+// Event payloads are private and always fetched fresh; reduce redundant network work.
+let efSyncInFlight=false,efSyncRequested=false,efEventsFetchedAt=0,efLastSyncAt=0;
+async function syncWorkspace(options={}){
+ if(!state.user)return;
+ if(efSyncInFlight){efSyncRequested=true;return;}
+ efSyncInFlight=true;
+ try{
+  const now=Date.now();
+  if(options.refreshList||now-efEventsFetchedAt>60000){
+   await refreshEvents();efEventsFetchedAt=Date.now();
+  }
+  if(state.current&&(!options.eventId||options.eventId===state.current.event.id)){
+   const before=state.current;
+   try{await loadEvent(state.current.event.id,false);
+    if(typeof ef22ReportEventChange==='function')ef22ReportEventChange(before,state.current,options.actor);}
+   catch(e){
+    if(e.message==='Event not found.'){
+     state.current=null;state.selected=null;
+     try{localStorage.removeItem('eventflow.activeEvent')}catch{}
+     updateEventPicker();state.page='dashboard';navigate('dashboard');return;
+    }
+    throw e;
+   }
+  }
+  efLastSyncAt=Date.now();
+  render();
+ }finally{
+  efSyncInFlight=false;
+  if(efSyncRequested){efSyncRequested=false;queueMicrotask(()=>act(()=>syncWorkspace({refreshList:true})))}
+ }
 }
+function connectStream(){
+ state.stream?.close();
+ clearInterval(state.leaseTimer);
+ clearInterval(state.syncTimer);
+ const stream=new EventSource('/api/stream');
+ state.stream=stream;
+ const status=$('#connectionStatus');
+ status.textContent='Connecting…';
+ stream.onopen=()=>{if(state.stream===stream)status.textContent='Live connected'};
+ stream.onerror=()=>{if(state.stream===stream)status.textContent='Sync via polling'};
+ stream.onmessage=e=>{
+  if(state.stream!==stream)return;
+  let message={};try{message=JSON.parse(e.data)}catch{}
+  // An event-list refresh is unnecessary for routine changes in the current event.
+  if(message.eventId&&state.current&&message.eventId!==state.current.event.id)return;
+  act(()=>syncWorkspace({eventId:message.eventId||null,actor:message.actor||null}));
+ };
+ // EventSource carries live updates; fallback polling only when disconnected or periodically
+ // to recover from missed notifications. Never poll a background tab continuously.
+ state.syncTimer=setInterval(()=>{
+  if(!state.user||document.visibilityState==='hidden')return;
+  const lost=stream.readyState!==EventSource.OPEN;
+  if(lost||Date.now()-efLastSyncAt>120000)act(()=>syncWorkspace({refreshList:true}));
+ },30000);
+ state.leaseTimer=setInterval(()=>{
+  if(state.editing&&state.current)api('/api/events/'+state.current.event.id+'/lease/renew','POST',{})
+   .catch(()=>{state.editing=false;render()});
+ },30000);
+}
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState==='visible'&&state.user)act(()=>syncWorkspace({refreshList:true}));
+});
 function pageHead(kicker,title,subtitle,buttons=''){return '<div class="page-head"><div><div class="eyebrow">'+kicker+'</div><h1>'+title+'</h1><p>'+subtitle+'</p></div><div class="head-actions">'+buttons+'</div></div>'}
 function stat(label,value,foot){return '<div class="stat"><div class="stat-label">'+label+'</div><div class="stat-value">'+value+'</div><div class="stat-foot">'+foot+'</div></div>'}
-function render(){if(!state.user)return;const page=state.page;if(page==='dashboard')renderDashboard();if(page==='planner')renderPlanner();if(page==='live')renderLive();if(page==='awards')renderAwards();if(page==='reports')renderReports();if(page==='users')renderUsers();}
+function render(){if(!state.user)return;const page=state.page;if(page==='manage'&&typeof ef22RenderEventManagement==='function'){ef22RenderEventManagement();return;}if(page==='dashboard')renderDashboard();if(page==='planner')renderPlanner();if(page==='live')renderLive();if(page==='awards')renderAwards();if(page==='reports')renderReports();if(page==='users')renderUsers();}
 function renderDashboard(){
 const events=state.events,upcoming=events.filter(e=>e.status!=='completed'),live=events.filter(e=>e.status==='live'),prog=events.reduce((a,e)=>a+(e.programCount||0),0);
-$('#pageDashboard').innerHTML=pageHead('YOUR WORKSPACE','Good to see you, '+esc(state.user.name.split(' ')[0])+'.','Plan unforgettable events with precision.',state.user.role!=='viewer'?'<button class="primary" id="newEvent">+ Create Event</button>':'')+
+$('#pageDashboard').innerHTML=pageHead('YOUR WORKSPACE','Choose an event','Select the event you want to operate. Only that event will load and synchronize.',['admin','editor'].includes(state.user.role)?'<button class="primary" id="newEvent">+ Create Event</button>':'')+
 '<div class="stats">'+stat('Total events',events.length,'Across your workspace')+stat('Upcoming & active',upcoming.length,'Not yet completed')+stat('Programs planned',prog,'All registered programs')+stat('Live right now',live.length,'Currently in progress')+'</div>'+
 '<div class="card"><div class="card-title"><h3>All events</h3><span class="muted">'+events.length+' events</span></div><div class="event-grid">'+(events.map(e=>'<article class="event-card" data-event="'+esc(e.id)+'"><span class="tag '+esc(e.status)+'">'+esc(e.status)+'</span><h3>'+esc(e.title)+'</h3><div class="event-meta">◷ '+esc(e.date)+' · '+esc(e.start)+'<br>⌖ '+esc(e.venue||'Venue not set')+'</div><div class="event-foot"><span>'+e.programCount+' programs</span><b>Open planner →</b></div></article>').join('')||'<div class="empty"><strong>No events yet</strong>Create your first event to start organizing the program.</div>')+'</div></div>';
 $('#newEvent')?.addEventListener('click',()=>eventDialog());
@@ -88,8 +147,8 @@ modal(existing?'Edit Event':'Create a New Event','<form id="eventForm"><div clas
 function current(){return state.current}
 async function acquire(force=false){if(!current())return;await act(async()=>{const id=current().event.id;const x=await api('/api/events/'+id+'/lease','POST',{takeover:force});state.current=x;state.editing=!!x.lock?.mine;render();toast('Editing enabled for this event.')})}
 async function release(){if(!current())return;await act(async()=>{await api('/api/events/'+current().event.id+'/lease','DELETE');await loadEvent(current().event.id);toast('Editing released.')})}
-function banner(){const c=current();if(!c)return '';const can=state.user.role!=='viewer';return '<div class="lock-banner '+(state.editing?'mine':'')+'">'+(state.editing?'✓ You are editing this event. Changes will appear to connected viewers.':c.lock?'🔒 '+esc(c.lock.user)+' is editing this event. You can view live updates.':'Read-only view. '+(can?'Take control to make changes.':''))+'</div>'}
-function editorButtons(){if(state.user.role==='viewer')return '';return state.editing?'<button class="secondary" id="releaseEditor">Release Editing</button>':current()?.lock?state.user.role==='admin'?'<button class="secondary" id="takeEditor">Take Over Editing</button>':'':'<button class="primary" id="getEditor">✎ Edit This Event</button>'}
+function banner(){const c=current();if(!c)return '';const can=['admin','editor'].includes(state.user.role);return '<div class="lock-banner '+(state.editing?'mine':'')+'">'+(state.editing?'✓ You are editing this event. Changes will appear to connected viewers.':c.lock?'🔒 '+esc(c.lock.user)+' is editing this event. You can view live updates.':'Read-only view. '+(can?'Take control to make changes.':''))+'</div>'}
+function editorButtons(){if(!['admin','editor'].includes(state.user.role))return '';return state.editing?'<button class="secondary" id="releaseEditor">Release Editing</button>':current()?.lock?state.user.role==='admin'?'<button class="secondary" id="takeEditor">Take Over Editing</button>':'':'<button class="primary" id="getEditor">✎ Edit This Event</button>'}
 function wireLock(){ $('#getEditor')?.addEventListener('click',()=>acquire());$('#takeEditor')?.addEventListener('click',()=>{if(confirm('Take editing control from the current user?'))acquire(true)});$('#releaseEditor')?.addEventListener('click',release)}
 function renderPlanner(){
 const c=current();if(!c){showEventChooser('planner','Choose an event to plan');return}
@@ -155,15 +214,39 @@ function printSheet(){
 const c=current();if(!c)return toast('Select an event first.');
 const e=c.event,rows=schedule(e,c.programs);
 $('#printSheet')?.remove();const el=document.createElement('section');el.id='printSheet';el.className='print-only';
-el.innerHTML='<h1>'+esc(e.title)+'</h1><p>'+esc(e.date)+' · Starts '+esc(e.start)+' · '+esc(e.venue||'')+' · '+esc(e.organizer||'')+'</p><table><thead><tr><th>#</th><th>Program</th><th>Time</th><th>Duration</th><th>Gap</th><th>Presenter</th><th>Source</th></tr></thead><tbody>'+rows.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(p.title)+'</td><td>'+hhmm(p.plannedStart)+' – '+hhmm(p.plannedEnd)+'</td><td>'+duration(p.duration)+'</td><td>'+duration(i===rows.length-1?0:p.gap)+'</td><td>'+esc(p.presenter)+'</td><td>'+esc(p.sourceType==='none'?'None':p.sourceType==='file'?p.sourceName||p.source:p.source)+'</td></tr>').join('')+'</tbody></table><p class="print-sub">Scheduled finish: '+hhmm(finalTime(e,c.programs))+' · '+rows.length+' programs</p><p class="print-sub">Media source reference</p>'+rows.filter(p=>p.sourceType!=='none').map(p=>'<p>'+esc(p.title)+' — '+esc(p.sourceType==='file'?'Media/'+p.source:p.source)+'</p>').join('');
+el.innerHTML='<h1>'+esc(e.title)+'</h1><p>'+esc(e.date)+' · Starts '+esc(e.start)+' · '+esc(e.venue||'')+' · '+esc(e.organizer||'')+'</p><table><thead><tr><th>#</th><th>Program ID</th><th>Program</th><th>Time</th><th>Duration</th><th>Gap</th><th>Presenter</th><th>Source</th></tr></thead><tbody>'+rows.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(p.programCode||'')+'</td><td>'+esc(p.title)+'</td><td>'+hhmm(p.plannedStart)+' – '+hhmm(p.plannedEnd)+'</td><td>'+duration(p.duration)+'</td><td>'+duration(i===rows.length-1?0:p.gap)+'</td><td>'+esc(p.presenter)+'</td><td>'+esc(p.sourceType==='none'?'None':p.sourceType==='file'?p.sourceName||p.source:p.source)+'</td></tr>').join('')+'</tbody></table><p class="print-sub">Scheduled finish: '+hhmm(finalTime(e,c.programs))+' · '+rows.length+' programs</p><p class="print-sub">Media source reference</p>'+rows.filter(p=>p.sourceType!=='none').map(p=>'<p>'+esc(p.title)+' — '+esc(p.sourceType==='file'?'Media/'+p.source:p.source)+'</p>').join('');
 document.body.append(el);window.addEventListener('afterprint',()=>el.remove(),{once:true});window.print();
 }
 function renderReports(){
 const c=current();if(!c){showEventChooser('reports','Choose an event for reports');return}$('#pageReports').innerHTML=pageHead('EXPORT & REPORTS','Event reports','Generate a clean print-ready running order with source references.','<button class="primary" id="printReport" '+(!c?'disabled':'')+'>▧ Print / Save as PDF</button>')+(c?'<div class="card report-preview"><div class="card-title"><h3>'+esc(c.event.title)+'</h3><span class="muted">'+c.programs.length+' programs</span></div><table><thead><tr><th>#</th><th>Program</th><th>Start</th><th>End</th><th>Duration</th><th>Source</th></tr></thead><tbody>'+schedule(c.event,c.programs).map(p=>'<tr><td>'+(p.index+1)+'</td><td>'+esc(p.title)+'</td><td>'+hhmm(p.plannedStart)+'</td><td>'+hhmm(p.plannedEnd)+'</td><td>'+duration(p.duration)+'</td><td>'+esc(p.sourceType)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty"><strong>Select an event</strong>Open an event from the Overview to export its agenda.</div>');
 $('#printReport')?.addEventListener('click',printSheet);
+ if(['admin','editor'].includes(state.user.role)){
+   const a=document.createElement('a');a.className='secondary';a.textContent='Download event JSON';
+   a.href='/api/events/'+encodeURIComponent(c.event.id)+'/export';a.style.cssText='display:inline-block;padding:10px 14px;margin:10px 0;text-decoration:none';
+   $('#pageReports').prepend(a);
+ }
+ if(['admin','editor','live_controller'].includes(state.user.role)){
+   const a=document.createElement('a');a.className='secondary';a.textContent='Download DJ package (ZIP)';
+   a.href='/api/events/'+encodeURIComponent(c.event.id)+'/dj-package';
+   a.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
+   $('#pageReports').prepend(a);
+   const urlCsv=document.createElement('a');urlCsv.className='secondary';urlCsv.textContent='Export DJ URLs (CSV)';
+   urlCsv.href='/api/events/'+encodeURIComponent(c.event.id)+'/dj-links.csv';
+   urlCsv.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
+   $('#pageReports').prepend(urlCsv);
+   const html=document.createElement('a');html.className='secondary';html.textContent='Export clickable DJ links (HTML)';
+   html.href='/api/events/'+encodeURIComponent(c.event.id)+'/dj-links.html';
+   html.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
+   $('#pageReports').prepend(html);
+ }
+ if(state.user.role==='admin'){
+   const a=document.createElement('a');a.className='secondary';a.textContent='Download complete backup (ZIP)';
+   a.href='/api/backup/full';a.style.cssText='display:inline-flex;padding:10px 14px;margin:10px 6px 10px 0;text-decoration:none';
+   $('#pageReports').prepend(a);
+ }
 }
 function renderUsers(){if(state.user.role!=='admin')return;$('#pageUsers').innerHTML=pageHead('ADMINISTRATION','People & Access','Create accounts and manage who can edit or view events.','<button class="primary" id="newUser">+ Add user</button>')+'<div class="card" id="usersContent">Loading team…</div>';$('#newUser').onclick=()=>userDialog();act(async()=>{const x=await api('/api/users');$('#usersContent').innerHTML='<div class="card-title"><h3>Team members</h3><span class="muted">'+x.users.length+' accounts</span></div>'+x.users.map(u=>'<div class="user-row"><span><b>'+esc(u.name)+'</b><small>@'+esc(u.username)+' · '+esc(u.role)+' · '+(u.active?'Active':'Disabled')+'</small></span><button class="secondary" data-user="'+esc(u.id)+'">Manage</button></div>').join('');$$('[data-user]','#usersContent').forEach(el=>el.onclick=()=>userDialog(x.users.find(u=>u.id===el.dataset.user)))})}
 function userDialog(u){
-modal(u?'Manage User':'Add User','<form id="userForm"><div class="form-grid"><label>Name<input name="name" value="'+esc(u?.name||'')+'" required></label><label>Username<input name="username" value="'+esc(u?.username||'')+'" '+(u?'disabled':'required')+' minlength="3"></label><label>Role<select name="role">'+['viewer','editor','admin'].map(r=>'<option value="'+r+'" '+((u?.role||'viewer')===r?'selected':'')+'>'+titleCase(r)+'</option>').join('')+'</select></label><label>Password ('+(u?'leave blank to retain':'minimum 8 characters')+')<input type="password" name="password" '+(u?'':'required')+' minlength="8" autocomplete="new-password"></label>'+(u?'<label>Account state<select name="active"><option value="true" '+(u.active?'selected':'')+'>Active</option><option value="false" '+(!u.active?'selected':'')+'>Disabled</option></select></label>':'')+'</div><div class="form-actions"><button class="secondary" type="button" id="cancelUser">Cancel</button><button class="primary">Save account</button></div></form>',()=>{$('#cancelUser').onclick=closeModal;$('#userForm').onsubmit=ev=>{ev.preventDefault();act(async()=>{const b=Object.fromEntries(new FormData(ev.target));if(!b.password)delete b.password;if(u){delete b.username;b.active=b.active==='true'}await api('/api/users'+(u?'/'+u.id:''),u?'PATCH':'POST',b);closeModal();renderUsers();toast('User account saved.')})}})}
+modal(u?'Manage User':'Add User','<form id="userForm"><div class="form-grid"><label>Name<input name="name" value="'+esc(u?.name||'')+'" required></label><label>Username<input name="username" value="'+esc(u?.username||'')+'" '+(u?'disabled':'required')+' minlength="3"></label><label>Role<select name="role">'+['viewer','live_controller','editor','admin'].map(r=>'<option value="'+r+'" '+((u?.role||'viewer')===r?'selected':'')+'>'+titleCase(r)+'</option>').join('')+'</select></label><label>Password ('+(u?'leave blank to retain':'minimum 8 characters')+')<input type="password" name="password" '+(u?'':'required')+' minlength="8" autocomplete="new-password"></label>'+(u?'<label>Account state<select name="active"><option value="true" '+(u.active?'selected':'')+'>Active</option><option value="false" '+(!u.active?'selected':'')+'>Disabled</option></select></label>':'')+'</div><div class="form-actions"><button class="secondary" type="button" id="cancelUser">Cancel</button><button class="primary">Save account</button></div></form>',()=>{$('#cancelUser').onclick=closeModal;$('#userForm').onsubmit=ev=>{ev.preventDefault();act(async()=>{const b=Object.fromEntries(new FormData(ev.target));if(!b.password)delete b.password;if(u){delete b.username;b.active=b.active==='true'}await api('/api/users'+(u?'/'+u.id:''),u?'PATCH':'POST',b);closeModal();renderUsers();toast('User account saved.')})}})}
 window.EventFlow={goHome:()=>navigate('dashboard')};
 initialize();

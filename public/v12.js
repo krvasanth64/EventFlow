@@ -7,17 +7,47 @@ let v12LiveAwardFilter='';
 function v12RenderLiveAwards(){
  const c=current(),list=$('#v12LiveAwards');if(!c||!list)return;
  const awards=(c.awards||[]).filter(a=>!v12LiveAwardFilter||a.category===v12LiveAwardFilter);
- list.innerHTML=awards.map((a,i)=>'<div class="v12-live-row"><span class="program-num">'+(a.order+1)+'</span>'+
+ list.innerHTML=awards.map(a=>'<div class="v12-live-row" data-award-id="'+esc(a.id)+'" draggable="'+(efCanOperate()&&a.status!=='presented')+'">'+
+ '<span class="grip" title="Drag award to reorder">⠿</span><span class="program-num">'+(a.order+1)+'</span>'+
  '<div class="v12-live-info"><strong>'+esc(a.awardName)+' — '+esc(a.winnerName)+'</strong>'+
  '<small>'+esc(a.category||'General')+' · '+esc(a.employeeName||'')+' · '+esc(a.contact||'No contact')+'</small>'+
  '<small>Presented by: '+esc(a.presenter||'Unassigned')+'</small></div>'+
  '<span class="tag '+(a.status==='presented'?'live':'')+'">'+esc(a.status)+'</span>'+
- (state.editing?'<div class="v12-row-actions"><button data-award-edit="'+esc(a.id)+'">Edit</button>'+
+ (efCanOperate()?'<div class="v12-row-actions">'+(efCanEdit()?'<button data-award-edit="'+esc(a.id)+'">Edit</button>':'')+
  (a.status!=='presented'?'<button data-award-done="'+esc(a.id)+'">Mark presented</button>':'<button data-award-pending="'+esc(a.id)+'">Reopen</button>')+'</div>':'')+
  '</div>').join('')||'<div class="empty"><strong>No awards for this category</strong>Choose another category or add an award.</div>';
- $('[data-award-edit]',list).forEach(b=>b.onclick=()=>efAwardModal((c.awards||[]).find(a=>a.id===b.dataset.awardEdit)));
- $('[data-award-done]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardDone),'presented'));
- $('[data-award-pending]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardPending),'pending'));
+ $$('[data-award-edit]',list).forEach(b=>b.onclick=()=>efAwardModal((c.awards||[]).find(a=>a.id===b.dataset.awardEdit)));
+ $$('[data-award-done]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardDone),'presented'));
+ $$('[data-award-pending]',list).forEach(b=>b.onclick=()=>efAwardAction((c.awards||[]).find(a=>a.id===b.dataset.awardPending),'pending'));
+ if(!efCanOperate())return;
+ const all=c.awards||[];
+ const reorder=(from,to)=>act(async()=>{
+  const moving=all.find(a=>a.id===from),target=all.find(a=>a.id===to);
+  if(!moving||!target||from===to)return;
+  if(moving.status==='presented'||target.status==='presented')return toast('Presented awards stay in their completed position.');
+  const ids=all.map(a=>a.id);
+  ids.splice(ids.indexOf(from),1);ids.splice(ids.indexOf(to),0,from);
+  const next=await api('/api/events/'+c.event.id+'/awards/reorder','POST',{revision:c.event.revision,ids});
+  state.current=next;renderLive();toast('Award running order saved.');
+ });
+ [...list.querySelectorAll('[data-award-id]')].forEach(row=>{
+  const award=all.find(a=>a.id===row.dataset.awardId);if(!award||award.status==='presented')return;
+  row.addEventListener('dragstart',ev=>{
+   ev.dataTransfer.effectAllowed='move';
+   ev.dataTransfer.setData('application/x-eventflow-award',award.id);
+   row.classList.add('ef13-dragging');
+  });
+  row.addEventListener('dragend',()=>row.classList.remove('ef13-dragging'));
+  row.addEventListener('dragover',ev=>{ev.preventDefault();ev.dataTransfer.dropEffect='move';row.classList.add('ef13-drop-target')});
+  row.addEventListener('dragleave',()=>row.classList.remove('ef13-drop-target'));
+  row.addEventListener('drop',ev=>{ev.preventDefault();row.classList.remove('ef13-drop-target');const from=ev.dataTransfer.getData('application/x-eventflow-award');if(from)reorder(from,award.id)});
+  const actions=row.querySelector('.v12-row-actions');if(!actions)return;
+  for(const [direction,delta] of [['up',-1],['down',1]]){
+   const button=document.createElement('button');button.type='button';button.textContent=delta<0?'↑':'↓';button.title='Move award '+direction;
+   button.onclick=()=>{const index=all.findIndex(a=>a.id===award.id),target=all[index+delta];if(target)reorder(award.id,target.id)};
+   actions.prepend(button);
+  }
+ });
 }
 
 const v12Url=source=>'/media/'+String(source).split('/').map(encodeURIComponent).join('/');
@@ -150,12 +180,12 @@ function v12UpdateLive(){
  const bar=$('#v12Progress');if(bar)bar.style.width=now?Math.min(100,100*efSec(now)/Math.max(now.duration,1))+'%':'0%';
  const btnHost=$('#v12OnAirActions');
  if(btnHost){
-   const controls=state.editing&&now?
+   const controls=efCanOperate()&&now?
      (now.status==='running'?'<button class="secondary" data-live="pause">Ⅱ Pause</button>':
       now.status==='paused'?'<button class="primary" data-live="resume">▶ Resume</button>':
       '<button class="primary" data-live="start">▶ Start / Play</button>')+
      (efActive(now)?'<button class="secondary" data-live="stop">■ Stop & Reset</button><button class="primary" data-live="finish">✓ Finish</button>':'<button class="secondary" data-live="skip">Skip</button>'):
-     '<span class="muted">Viewer — edit lock is required to operate.</span>';
+     '<span class="muted">Viewing only — live-control permission required.</span>';
    if(btnHost.dataset.mode!==controls){btnHost.innerHTML=controls;btnHost.dataset.mode=controls;$$('[data-live]',btnHost).forEach(b=>b.onclick=()=>efLiveAction(now,b.dataset.live));}
  }
  if(root.dataset.revision!==String(c.event.revision)){
@@ -177,12 +207,12 @@ renderLive=function(){
  '<div class="ef-stage-stats"><span>Elapsed <b id="v12Elapsed">—</b></span><span>Estimated program end <b id="v12End">—</b></span></div>'+
  '<div class="ef-live-actions" id="v12OnAirActions"></div></section>'+
  '<section class="card ef-source-card"><div class="card-title"><h3>On-air source</h3><span class="muted">Operator preview</span></div>'+efMediaMarkup(now)+
- '<div class="v12-source-tools">'+(now?'<button class="secondary" id="v12ReadScript">Read script</button><button class="secondary" id="v12OpenSource">Open source ↗</button>':'')+'</div>'+
+ '<div class="v12-source-tools">'+(now?'<button class="secondary" id="v12ReadScript">Read script</button><button class="secondary" id="v12OpenSource">Open source ↗</button>':'')+(now?.sourceType==='file'&&efCanOperate()?'<a class="secondary" style="display:inline-block;padding:10px 14px;text-decoration:none" href="/api/events/'+encodeURIComponent(c.event.id)+'/programs/'+encodeURIComponent(now.id)+'/download">Download DJ media</a>':'')+'</div>'+
  '<p class="muted tiny">Source playback runs on this device. Status and ETA synchronize to viewers.</p></section></div>'+
  '<div class="ef-forecast-head"><div><div class="eyebrow">DYNAMIC TIMELINE</div><h3>Live running order</h3></div>'+
  '<div class="ef-forecast-metrics"><div>Expected event finish <b id="v12Finish">—</b></div><div>Schedule variance <b id="v12Delta">—</b></div></div></div>'+
  '<div class="card"><div class="v12-filter-row"><label>Program category<select id="v12LiveFilter">'+v12CategoryOptions(programs,v12LiveFilter)+'</select></label>'+
- (state.editing?'<button id="v12AddProgram" class="primary">+ Add program</button>':'')+
+ (efCanEdit()?'<button id="v12AddProgram" class="primary">+ Add program</button>':'')+
  '<span class="muted tiny">Upcoming programs can be reordered while on air.</span></div><div id="v12LiveQueue" class="v12-queue"></div></div>'+
  '<div class="card"><div class="card-title"><h3>Award winners — live preparation</h3>'+
  '<button class="secondary" id="v12OpenAwards">Full award planner</button></div>'+
