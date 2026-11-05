@@ -1,6 +1,6 @@
 # EventFlow — Portable Event Program Manager
 
-EventFlow is a lightweight JSON-based event agenda and show-control web app for Windows, LAN, and Tailscale. It uses Node.js built-in modules, with **no npm dependency installation**.
+EventFlow is a lightweight JSON-based event agenda and show-control web app for Windows, LAN, and Tailscale. It uses Node.js with ExcelJS for native XLSX import. Run **`npm install`** after cloning or pulling updates that change `package.json`.
 
 ## Features
 
@@ -14,6 +14,12 @@ EventFlow is a lightweight JSON-based event agenda and show-control web app for 
 - Real-time change notifications, revision conflict protection and atomic JSON writes.
 - Mobile-friendly responsive interface and home-screen manifest.
 - Live operator controls (start/finish/skip) with actual timestamps and countdown.
+
+## EventFlow V1.4.7 — Recovery and staging hardening
+
+The V1.4 beta adds Live Controller permissions, DJ downloads/ZIP and URL exports, stable P####/A#### codes, backstage participant readiness, a native four-sheet Excel importer, Admin-controlled sample events, and a mobile/LED timeline.
+
+V1.4.7 adds a **read-only offline full-backup verifier** and a no-overwrite isolated restore rehearsal tool, plus optional HTTPS origin enforcement on mutations. The feature branch is **not production-approved**; use [the V1.4.7 recovery and staging checklist](docs/V1.4.7-RECOVERY-STAGING.md). For full Excel import and demo steps, see [the V1.4.6 guide](docs/V1.4.6-IMPORT-DEMO.md).
 
 ## EventFlow V1.3 — Live Control and Event Dropdowns
 
@@ -137,7 +143,7 @@ To migrate, stop the old server, copy the application plus the whole runtime fol
        node --check public/app.js
        npm start
 
-Node.js 20+ is required. No npm install is necessary. The first admin password can also be provided to the first run via EVENTFLOW_ADMIN_PASSWORD environment variable. Avoid putting passwords in tracked files.
+Node.js 20+ is required. Run `npm install` before starting the current beta. The dependency lockfile and npm security audit are staging release gates. The first admin password can also be provided to the first run via EVENTFLOW_ADMIN_PASSWORD environment variable. Avoid putting passwords in tracked files.
 
 ## License
 
