@@ -1,0 +1,63 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
+const {spawn}=require('node:child_process');
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const freePort=()=>new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})});
+test('Funnel performance: gzip private JSON, safe static cache, no private/offline cache',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ef-perf-')),port=await freePort();
+ const process=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env:{
+  ...global.process.env,HOST:'127.0.0.1',PORT:String(port),EVENTFLOW_DATA:dir,EVENTFLOW_ADMIN_PASSWORD:'localTestPassword123'
+ },stdio:'pipe'});
+ t.after(()=>{process.kill();fs.rmSync(dir,{recursive:true,force:true})});
+ const base='http://127.0.0.1:'+port;
+ let ready=false;
+ for(let i=0;i<100;i++){try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}await wait(70)}
+ assert.equal(ready,true);
+ const login=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({username:'admin',password:'localTestPassword123'})});
+ assert.equal(login.status,200);
+ assert.equal(login.headers.get('cache-control'),'no-store');
+ const cookie=login.headers.get('set-cookie').split(';')[0];
+ const sess={Cookie:cookie,'Content-Type':'application/json'};
+ const setting=await fetch(base+'/api/demo/settings',{method:'PUT',headers:sess,body:JSON.stringify({enabled:true})});
+ assert.equal(setting.status,200);
+ const demo=await fetch(base+'/api/demo/create',{method:'POST',headers:sess,body:'{}'});
+ assert.equal(demo.status,201);
+ const id=(await demo.json()).event.id;
+ const detail=await fetch(base+'/api/events/'+id,{headers:{Cookie:cookie,'Accept-Encoding':'gzip'}});
+ assert.equal(detail.status,200);
+ assert.equal(detail.headers.get('content-encoding'),'gzip');
+ assert.equal(detail.headers.get('cache-control'),'no-store');
+ assert.equal(detail.headers.get('vary'),'Accept-Encoding');
+ const json=await detail.json();
+ assert.equal(json.programs.length,8);
+ assert.equal(json.awards.length,4);
+ assert.ok(json.programs[0].participants.length>0);
+ const staticFile=await fetch(base+'/app.js?v=1.5.1-beta');
+ assert.equal(staticFile.status,200);
+ assert.match(staticFile.headers.get('cache-control'),/public.*immutable/);
+ const css=await fetch(base+'/style.css?v=1.5.1-beta');
+ assert.match(css.headers.get('cache-control'),/immutable/);
+ const unversioned=await fetch(base+'/app.js');
+ assert.equal(unversioned.headers.get('cache-control'),'no-store');
+ const shell=await fetch(base+'/');
+ assert.equal(shell.headers.get('cache-control'),'no-store');
+ const sw=await fetch(base+'/sw.js');
+ assert.equal(sw.status,200);
+ assert.equal(sw.headers.get('cache-control'),'no-store');
+ const swCode=await sw.text();
+ assert.ok(swCode.includes("if(req.method!=='GET')return"));
+ assert.ok(swCode.includes('PUBLIC_PATHS.has(url.pathname)'),'SW only caches static allowlist');
+ assert.ok(!swCode.includes("'/api/"),'no API endpoints included in SW allowlist');
+ const media=json.programs.find(p=>p.sourceType==='file');
+ assert.ok(media);
+ const audio=await fetch(base+'/media/'+media.source,{headers:{Cookie:cookie}});
+ assert.equal(audio.status,200);
+ assert.equal(audio.headers.get('cache-control'),'no-store','private media must not be cached');
+ const app=await staticFile.text();
+ assert.ok(app.includes('efSyncInFlight'),'SSE refreshes coalesced');
+ assert.ok(app.includes('120000'),'periodic backup refresh slowed');
+ assert.ok(!app.includes('},15000);'),'old aggressive polling removed');
+});
