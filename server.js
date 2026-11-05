@@ -820,7 +820,12 @@ const server = http.createServer(async (req,res) => {
     if(mediaMatch&&['GET','HEAD'].includes(req.method)) {
       need(user);
       const relative=mediaMatch[1]+'/'+mediaMatch[2];
-      if(!db.programs.some(p=>(p.sourceType==='file'&&p.source===relative)||p.scriptSource===relative||(p.sourceArchive||[]).some(a=>a.path===relative))) fail(404,'File not registered.');
+      if(!db.programs.some(p=>{
+       const event=db.events.find(e=>e.id===p.eventId);
+       if(event?.isDemo&&!db.settings.demoEnabled&&user.role!=='admin')return false;
+       return (p.sourceType==='file'&&p.source===relative)||p.scriptSource===relative||
+         (p.sourceArchive||[]).some(a=>a.path===relative);
+      })) fail(404,'File not registered.');
       const file=path.join(MEDIA,relative);if(!fs.existsSync(file))fail(404,'Missing file.');
       return streamFile(req,res,file,true);
     }
