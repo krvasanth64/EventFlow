@@ -79,3 +79,33 @@ test('stable per-event P/A codes, participant roster and live readiness survive 
  assert.equal(restored.data.programs.find(x=>x.id===p2.id).participants[0].checkedIn,true);
  assert.equal(restored.data.awards.find(x=>x.id===a1.id).awardCode,'A0001');
 });
+
+
+test('legacy event receives stable P/A codes and retains existing employee contact',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eventflow-migrate-')),n=await port();
+ t.after(()=>fs.rmSync(dir,{force:true,recursive:true}));
+ const eventId='11111111-1111-4111-8111-111111111111';
+ const pId='22222222-2222-4222-8222-222222222222';
+ const aId='33333333-3333-4333-8333-333333333333';
+ fs.writeFileSync(path.join(dir,'data.json'),JSON.stringify({version:1,revision:10,users:[],
+  events:[{id:eventId,title:'Legacy Event',date:'2026-11-20',start:'09:00',revision:1,status:'draft'}],
+  programs:[{id:pId,eventId,order:0,title:'Historical Speech',type:'speech',category:'Speech',duration:100,gap:0,sourceType:'none',source:'',
+   status:'pending',employeeId:'EMP-001',employeeName:'Legacy Participant',contact:'9000000001'}],
+  awards:[{id:aId,eventId,order:0,category:'Team',awardName:'Legacy Award',winnerName:'Legacy Winner',status:'pending'}],
+  history:[]}),{mode:0o600});
+ const child=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),
+  env:{...process.env,EVENTFLOW_DATA:dir,HOST:'127.0.0.1',PORT:String(n),EVENTFLOW_ADMIN_PASSWORD:'testPassword123'},stdio:'pipe'});
+ t.after(()=>child.kill());
+ const base='http://127.0.0.1:'+n;
+ let ready=false;
+ for(let i=0;i<80;i++){try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}await delay(70)}
+ assert.equal(ready,true,'legacy server starts successfully');
+ const disk=JSON.parse(fs.readFileSync(path.join(dir,'data.json'),'utf8'));
+ assert.equal(disk.programs[0].id,pId,'stable internal UUID remains unchanged');
+ assert.equal(disk.programs[0].programCode,'P0001');
+ assert.equal(disk.awards[0].id,aId,'stable internal award UUID remains unchanged');
+ assert.equal(disk.awards[0].awardCode,'A0001');
+ assert.equal(disk.programs[0].participants.length,1);
+ assert.deepEqual([disk.programs[0].participants[0].employeeCode,disk.programs[0].participants[0].name,disk.programs[0].participants[0].contact],
+  ['EMP-001','Legacy Participant','9000000001']);
+});
