@@ -129,7 +129,8 @@ renderReports=function(){
  ef18Reports();
  const host=$('#pageReports');if(!host||!current())return;
  const button=$('#printReport');if(button){
-  button.textContent='Configure & Download Program PDF';button.onclick=()=>ef18EditReport('programs');
+  const clean=button.cloneNode(true);button.replaceWith(clean);
+  clean.textContent='Configure & Download Program PDF';clean.onclick=()=>ef18EditReport('programs');
  }
  const extra=document.createElement('button');extra.className='secondary';extra.type='button';
  extra.textContent='Configure & Download Award PDF';extra.onclick=()=>ef18EditReport('awards');
