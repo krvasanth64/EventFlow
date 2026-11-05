@@ -28,8 +28,17 @@ async function main(){
  const name='EventFlow DJ Demo '+stamp+' '+Math.random().toString(36).slice(2,6);
  const created=await call('/api/events','POST',{title:name,date:stamp,start:'18:00',venue:'Demo Auditorium',organizer:'EventFlow QA',description:'Sample data only; all programs use timer-only until media is uploaded.'});
  const id=created.event.id;let state=await call('/api/events/'+id+'/lease','POST',{});
+ let rowCounter=0;
  for(const [title,type,category,duration,sourceType] of samples){
   state=await call('/api/events/'+id+'/programs','POST',{revision:state.event.revision,title,type,category,duration,gap:30,presenter:'Demo Team',sourceType,notes:'Sample DJ rehearsal item.'});
+  const program=state.programs.find(p=>p.title===title);
+  const count=type==='Group Dance'?4:type==='Magic Show'?3:2;
+  const participants=Array.from({length:count},(_,i)=>({
+   employeeCode:'DEMO-'+String(++rowCounter).padStart(4,'0'),
+   name:'Sample Participant '+(i+1)+' · '+title,
+   contact:''
+  }));
+  state=await call('/api/events/'+id+'/programs/'+program.id+'/participants','PUT',{revision:state.event.revision,participants});
  }
  const awards=[
  ['Excellence','Best Performer','Demo Winner A','Chief Guest'],
