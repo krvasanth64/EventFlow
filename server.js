@@ -458,7 +458,18 @@ const server = http.createServer(async (req,res) => {
           const conflicts=kind==='programs'?
             parsed.programs.filter(x=>eventPrograms(id).some(p=>p.title.toLowerCase()===x.title.toLowerCase()))
               .map(x=>'Existing program title: '+x.title):
-            [];
+            parsed.awards.filter(a=>eventAwards(id).some(x=>
+               x.awardName.toLowerCase()===a.awardName.toLowerCase()&&
+               x.winnerName.toLowerCase()===a.winnerName.toLowerCase()))
+              .map(a=>'Existing award and winner: '+a.awardName+' / '+a.winnerName);
+          if(kind==='awards'){
+            const pairs=new Set();
+            for(const a of parsed.awards){
+              const pair=a.awardName.toLowerCase()+'|'+a.winnerName.toLowerCase();
+              if(pairs.has(pair))conflicts.push('Duplicate award/winner pair in Excel: '+a.awardName);
+              pairs.add(pair);
+            }
+          }
           parsed.errors.push(...conflicts);parsed.valid=parsed.errors.length===0;
           if(verb==='preview')return send(res,200,{valid:parsed.valid,errors:parsed.errors,counts:parsed.counts,kind});
           if(!parsed.valid)fail(422,parsed.errors.join('; ').slice(0,1200));
