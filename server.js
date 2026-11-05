@@ -91,11 +91,68 @@ if (!fs.existsSync(DB)) persist();
 function migrateCodes(){
  let changed=false;
  for(const event of db.events){
-  for(const [collection,field,prefix,counter] of [[db.programs,'programCode','P','nextProgramNumber'],[db.awards,'awardCode','A','nextAwardNumber']]){
-   const items=collection.filter(x=>x.eventId===event.id);
-   const seen=new Set();let max=0;
+  for(const config of [
+   {items:db.programs,field:'programCode',prefix:'P',counter:'nextProgramNumber'},
+   {items:db.awards,field:'awardCode',prefix:'A',counter:'nextAwardNumber'}
+  ]){
+   const items=config.items.filter(item=>item.eventId===event.id);
+   const existing=new Set();
+   let max=0;
    for(const item of items){
-    if(typeof item[field]==='string'&&new RegExp('^'+prefix+'\\d{4}
+    const value=item[config.field];
+    const valid=typeof value==='string'&&value.startsWith(config.prefix)&&value.length===5&&
+      /^[0-9]{4}$/.test(value.slice(1))&&Number(value.slice(1))>0&&!existing.has(value);
+    if(valid){existing.add(value);max=Math.max(max,Number(value.slice(1)))}
+    else if(value!=null){item[config.field]=null;changed=true}
+   }
+   let number=Math.max(max+1,Number(event[config.counter])||1);
+   const missing=items.filter(item=>!item[config.field]).sort((a,b)=>(a.order||0)-(b.order||0)||a.id.localeCompare(b.id));
+   for(const item of missing){
+    if(number>9999)throw Error('Event display ID limit reached during migration');
+    item[config.field]=config.prefix+String(number++).padStart(4,'0');
+    changed=true;
+   }
+   if(event[config.counter]!==number){event[config.counter]=number;changed=true}
+  }
+  for(const program of db.programs.filter(item=>item.eventId===event.id)){
+   if(!Array.isArray(program.participants)){
+    program.participants=program.employeeName?[{
+      id:uid(),employeeCode:String(program.employeeId||''),name:String(program.employeeName),
+      contact:String(program.contact||''),checkedIn:false,checkedAt:null,checkedBy:null
+    }]:[];
+    changed=true;
+   }
+  }
+ }
+ return changed;
+}
+function nextDisplayCode(event,prefix){
+ const field=prefix==='P'?'nextProgramNumber':'nextAwardNumber';
+ const number=event[field]||1;
+ if(number>9999)fail(409,'Event display ID limit reached.');
+ event[field]=number+1;
+ return prefix+String(number).padStart(4,'0');
+}
+function cleanParticipants(rows,previous=[]){
+ if(!Array.isArray(rows)||rows.length>250)fail(400,'Participants must contain at most 250 rows.');
+ const existing=new Map(previous.map(p=>[p.id,p])),usedIds=new Set(),usedCodes=new Set();
+ return rows.map((row,index)=>{
+  if(!row||typeof row!=='object'||Array.isArray(row))fail(400,'Invalid participant row.');
+  const name=String(row.name||'').trim().slice(0,160);
+  const employeeCode=String(row.employeeCode||'').trim().slice(0,60);
+  const contact=String(row.contact||'').trim().slice(0,50);
+  if(!name)fail(400,'Participant name is required in row '+(index+1));
+  if(employeeCode&&usedCodes.has(employeeCode.toLowerCase()))fail(409,'Duplicate employee code.');
+  if(employeeCode)usedCodes.add(employeeCode.toLowerCase());
+  const old=existing.get(row.id);
+  const id=old?old.id:uid();
+  if(usedIds.has(id))fail(409,'Duplicate participant row.');
+  usedIds.add(id);
+  return {id,employeeCode,name,contact,checkedIn:!!old?.checkedIn,
+    checkedAt:old?.checkedAt||null,checkedBy:old?.checkedBy||null};
+ });
+}
+if(migrateCodes())persist();
 const seedAdmin = process.env.EVENTFLOW_ADMIN_PASSWORD;
 if (!db.users.length && seedAdmin) {
   db.users.push({ id: uid(), username: process.env.EVENTFLOW_ADMIN_USER || 'admin', name: 'Administrator', role: 'admin', active: true, password: hash(seedAdmin) });
