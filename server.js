@@ -373,7 +373,8 @@ const server = http.createServer(async (req,res) => {
         id:uid(),eventId:e.id,order:i,awardCode:'A'+String(i+1).padStart(4,'0'),
         category:a.category,awardName:a.awardName,winnerName:a.winnerName,
         presenter:a.presenter,employeeId:a.employeeId||'',employeeName:'',contact:a.contact||'',
-        recipientDetails:'',notes:a.notes||'',status:'pending',presentedAt:null
+        recipientDetails:'',notes:a.notes||'',status:'pending',presentedAt:null,
+         participants:cleanParticipants([{name:a.winnerName,employeeCode:a.employeeId||'',contact:a.contact||''}])
       }));
       db.events.push(e);db.programs.push(...programs);db.awards.push(...awards);
       audit('event.imported',user,e.id,'Excel '+programs.length+' programs and '+awards.length+' awards');
@@ -434,7 +435,8 @@ const server = http.createServer(async (req,res) => {
        ['Special Recognition','Outstanding Achievement','Demo Winner Three','Event Host']];
       const awards=awardSpecs.map(([category,awardName,winnerName,presenter],i)=>({
         id:uid(),eventId:event.id,awardCode:'A'+String(i+1).padStart(4,'0'),order:i,
-        category,awardName,winnerName,presenter,status:'pending',presentedAt:null
+        category,awardName,winnerName,presenter,status:'pending',presentedAt:null,
+         participants:cleanParticipants([{name:winnerName,employeeCode:'',contact:''}])
       }));
       db.events.push(event);db.programs.push(...programs);db.awards.push(...awards);
       audit('demo.created',user,event.id,event.title);persist();broadcast(event.id);
@@ -503,7 +505,8 @@ const server = http.createServer(async (req,res) => {
                 winnerName:item.winnerName,presenter:item.presenter,employeeId:item.employeeId,
                 contact:item.contact,notes:item.notes});
               db.awards.push({id:uid(),eventId:id,awardCode:nextDisplayCode(e,'A'),
-                order:initial+index,...details,status:'pending',presentedAt:null});
+                order:initial+index,...details,status:'pending',presentedAt:null,
+                 participants:cleanParticipants([{name:details.winnerName,employeeCode:details.employeeId||'',contact:details.contact||''}])});
             }
           }
           e.revision++;audit('event.section.import',user,id,kind+' '+(kind==='programs'?parsed.programs.length:parsed.awards.length));
