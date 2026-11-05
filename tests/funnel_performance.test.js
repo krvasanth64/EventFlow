@@ -7,10 +7,10 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const freePort=()=>new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})});
 test('Funnel performance: gzip private JSON, safe static cache, no private/offline cache',async t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ef-perf-')),port=await freePort();
- const process=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env:{
+ const appProcess=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env:{
   ...global.process.env,HOST:'127.0.0.1',PORT:String(port),EVENTFLOW_DATA:dir,EVENTFLOW_ADMIN_PASSWORD:'localTestPassword123'
  },stdio:'pipe'});
- t.after(()=>{process.kill();fs.rmSync(dir,{recursive:true,force:true})});
+ t.after(()=>{appProcess.kill();fs.rmSync(dir,{recursive:true,force:true})});
  const base='http://127.0.0.1:'+port;
  let ready=false;
  for(let i=0;i<100;i++){try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}await wait(70)}
