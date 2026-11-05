@@ -21,6 +21,7 @@ jobs:
           node --check public/v17.js
           node --check zip.js
           node --check scripts/create-demo.js
+          node --check scripts/verify-backup.js
           node --check public/app.js
           node --check public/extensions.js
           node --check public/v12.js
