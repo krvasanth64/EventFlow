@@ -33,7 +33,7 @@ function ef16BindPrep(root){
    const result=await api('/api/events/'+c.event.id+'/programs/'+p.id+'/participants/'+input.dataset.readyPerson+'/check','POST',
     {revision:c.event.revision,checkedIn:checked});
    state.current=result;
-   if(state.page==='prep')renderPrep();else if(state.page==='live')ef16RefreshLivePrep();
+   if(state.page==='prep')renderPrep();else if(state.page==='live')v12RenderQueue();
   }).finally(()=>{if(input.isConnected)input.disabled=false});
  });
  $$('[data-edit-people]',root).forEach(button=>button.onclick=()=>{
@@ -169,6 +169,6 @@ renderAwards=function(){
  });
 };
 const ef16OldLive=renderLive;
-renderLive=function(){ef16OldLive();ef16RefreshLivePrep()};
+renderLive=function(){ef16OldLive();$('#ef16LivePreparation')?.remove()};
 const ef16OriginalRender=render;
 render=function(){if(state.page==='prep')return renderPrep();return ef16OriginalRender()};
