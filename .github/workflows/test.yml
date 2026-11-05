@@ -23,5 +23,6 @@ jobs:
           node --check public/v13.js
           node --check public/v14.js
           node --check public/v15.js
+          node --check public/v16.js
       - name: API integration tests
         run: npm test
