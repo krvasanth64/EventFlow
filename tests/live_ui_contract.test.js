@@ -16,6 +16,6 @@ test('live awards selectors, skipped restore UI, and V1.4.3 asset wiring contrac
  assert.ok(awards.includes('application/x-eventflow-award'),'drag/drop uses distinct award MIME key');
  assert.ok(skipped.includes('ef15SkippedPanel'),'separate skipped panel is installed');
  assert.ok(skipped.includes('Restore to Upcoming'),'restore action exists');
- assert.ok(html.includes('/v15.js?v=1.4.3-beta'),'new script is included');
+ assert.ok(html.includes('/v15.js?v='+require('../package.json').version),'new script is included at current release version');
  assert.ok(server.includes('v15\\.js'),'new script is served');
 });
