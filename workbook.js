@@ -130,3 +130,52 @@ async function parseWorkbook(buffer){
  return {event,programs,awards,errors:errors.slice(0,100),counts:{programs:programs.length,participants:programs.reduce((x,p)=>x+p.participants.length,0),awards:awards.length},valid:errors.length===0};
 }
 module.exports={createTemplate,parseWorkbook,HEADERS};
+
+async function createSectionTemplate(kind){
+ if(!['programs','awards'].includes(kind))throw Error('Invalid section');
+ const wb=new ExcelJS.Workbook(),data=exampleData(true);
+ const names=kind==='programs'?['Programs','Participants']:['Awards'];
+ for(const name of names)makeSheet(wb,name,data[name]);
+ const guide=wb.addWorksheet('Instructions');
+ guide.addRow(['EventFlow '+kind.toUpperCase()+' append template']);
+ guide.addRow(['Import adds NEW rows to the currently selected event; existing records are not overwritten.']);
+ guide.addRow(['Program Ref links Participants to Programs in this workbook; EventFlow generates immutable P#### / A#### IDs.']);
+ guide.addRow(['Preview and obtain event editing lease before applying.']);
+ guide.addRow(['For file sources, leave URL blank and upload the actual media to the newly created program.']);
+ guide.getColumn(1).width=110;
+ return Buffer.from(await wb.xlsx.writeBuffer());
+}
+async function parseSectionWorkbook(buffer,kind){
+ if(!['programs','awards'].includes(kind))throw Error('Invalid section');
+ if(!Buffer.isBuffer(buffer)||buffer.length>8*1024*1024)throw Error('Excel file must be under 8 MB.');
+ const wb=new ExcelJS.Workbook();
+ try{await wb.xlsx.load(buffer)}catch{throw Error('Invalid XLSX file.')}
+ const names=kind==='programs'?['Programs','Participants']:['Awards'];
+ const errors=[];
+ for(const name of names){
+  const sheet=wb.getWorksheet(name);
+  if(!sheet){errors.push('Missing '+name+' sheet');continue;}
+  const h=HEADERS[name];
+  if(h.some((header,i)=>clean(sheet.getRow(1).getCell(i+1).value)!==header))
+   errors.push('Invalid '+name+' headers');
+ }
+ if(errors.length)return {valid:false,errors,kind,programs:[],awards:[],counts:{programs:0,participants:0,awards:0}};
+ // Reuse the strict main parser for all validations by supplying the other sheets.
+ if(kind==='programs'){
+  makeSheet(wb,'Event',[['Import Validation','2026-01-01','00:00','','','']]);
+  makeSheet(wb,'Awards',[]);
+ }else{
+  makeSheet(wb,'Event',[['Import Validation','2026-01-01','00:00','','','']]);
+  makeSheet(wb,'Programs',[['REF-VALIDATE','Placeholder','Speech','General',1,0,'','none','','']]);
+  makeSheet(wb,'Participants',[]);
+ }
+ const parsed=await parseWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+ if(kind==='awards'){
+  parsed.programs=[];parsed.counts.programs=0;
+ }
+ parsed.kind=kind;
+ if(kind==='programs')parsed.awards=[];
+ return parsed;
+}
+module.exports.createSectionTemplate=createSectionTemplate;
+module.exports.parseSectionWorkbook=parseSectionWorkbook;
