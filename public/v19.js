@@ -2,7 +2,7 @@
 // V1.4.9 live timeline: stage-first pagination and lightweight readiness badges.
 // Full checklists remain exclusively on the Backstage Preparation page.
 const ef19PageSizes=[10,20,30,50,100,200,'all'];
-let ef19Paging={key:null,size:10,page:0,focusId:null};
+let ef19Paging={key:null,eventId:null,size:10,page:0,focusId:null};
 const ef19CanQueue=p=>p.status!=='skipped';
 function ef19Focus(rows){
  return rows.find(p=>['running','paused'].includes(p.status))||
@@ -39,6 +39,7 @@ v12RenderQueue=function(){
  const c=current(),host=$('#v12LiveQueue');if(!c||!host)return;
  const all=c.programs||[],forecast=efForecast(c.event,all),active=all.find(efActive);
  const filtered=all.filter(p=>ef19CanQueue(p)&&(!v12LiveFilter||(p.category||'General')===v12LiveFilter));
+ if(ef19Paging.eventId!==c.event.id){ef19Paging.eventId=c.event.id;ef19Paging.size=10;ef19Paging.key=null;}
  const key=c.event.id+'|'+(v12LiveFilter||'*');
  const focus=ef19Focus(filtered);
  if(ef19Paging.key!==key){
