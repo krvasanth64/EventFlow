@@ -167,8 +167,8 @@ function efPrintAwards(){
   const c=current();if(!c)return;
   $('#printSheet')?.remove();
   const doc=document.createElement('section');doc.id='printSheet';doc.className='print-only';
-  doc.innerHTML='<h1>'+esc(c.event.title)+' — Award Winners</h1><p>'+esc(c.event.date)+' · '+esc(c.event.venue||'')+'</p><table><thead><tr><th>#</th><th>Category</th><th>Award</th><th>Winner</th><th>Details</th><th>Presented by</th><th>Status</th></tr></thead><tbody>'+
-  (c.awards||[]).map((a,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(a.category)+'</td><td>'+esc(a.awardName)+'</td><td>'+esc(a.winnerName)+'</td><td>'+esc(a.recipientDetails)+'</td><td>'+esc(a.presenter)+'</td><td>'+esc(a.status)+'</td></tr>').join('')+'</tbody></table><p class="print-sub">Total awards: '+(c.awards||[]).length+'</p>';
+  doc.innerHTML='<h1>'+esc(c.event.title)+' — Award Winners</h1><p>'+esc(c.event.date)+' · '+esc(c.event.venue||'')+'</p><table><thead><tr><th>#</th><th>Award ID</th><th>Category</th><th>Award</th><th>Winner</th><th>Details</th><th>Presented by</th><th>Status</th></tr></thead><tbody>'+
+  (c.awards||[]).map((a,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(a.awardCode||'')+'</td><td>'+esc(a.category)+'</td><td>'+esc(a.awardName)+'</td><td>'+esc(a.winnerName)+'</td><td>'+esc(a.recipientDetails)+'</td><td>'+esc(a.presenter)+'</td><td>'+esc(a.status)+'</td></tr>').join('')+'</tbody></table><p class="print-sub">Total awards: '+(c.awards||[]).length+'</p>';
   document.body.append(doc);window.addEventListener('afterprint',()=>doc.remove(),{once:true});window.print();
 }
 function renderAwards(){
