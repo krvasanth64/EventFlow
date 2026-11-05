@@ -62,10 +62,10 @@ function buildPdf(kind,record,configInput={}){
    .text(String(record.event.title||'Event').slice(0,140),32,30,{width:space});
   doc.font('Helvetica').fontSize(9).fillColor('#4b5a72')
    .text(title+'  |  '+String(record.event.date||'')+'  |  '+String(record.event.venue||''),32,54,{width:space});
-  const y=77,headerHeight=32;doc.rect(32,y,space,headerHeight).fill('#243657');
+  const y=77,headerHeight=Math.max(23,Math.ceil(cfg.fontSize*2.1+6));doc.rect(32,y,space,headerHeight).fill('#243657');
   let x=32;cfg.columns.forEach((c,i)=>{
    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(Math.max(6,cfg.fontSize-.3))
-    .text(c.title,x+4,y+7,{width:Math.max(2,widths[i]-8),height:headerHeight-10,ellipsis:true});
+    .text(c.title,x+3,y+Math.max(4,(headerHeight-cfg.fontSize*1.5)/2),{width:Math.max(2,widths[i]-6),height:headerHeight-7,ellipsis:true});
    x+=widths[i];
   });
   return y+headerHeight;
@@ -74,13 +74,17 @@ function buildPdf(kind,record,configInput={}){
  for(const row of rows){
   const values=cfg.columns.map(c=>String(row[c.key]??'').replace(/[\r\n]+/g,' ').slice(0,1800));
   doc.font('Helvetica').fontSize(cfg.fontSize);
-  const heights=values.map((value,i)=>doc.heightOfString(value,{width:Math.max(5,widths[i]-10),lineGap:1}));
-  const h=Math.max(23,Math.min(180,Math.max(...heights)+12));
+  // Compact vertical padding scales with the chosen font; wrapped content can grow the row.
+  const cellPadding=Math.max(2,Math.round(cfg.fontSize*.32));
+  const heights=values.map((value,i)=>doc.heightOfString(value,{width:Math.max(5,widths[i]-8),lineGap:0}));
+  const pageRowLimit=doc.page.height-44-(77+Math.max(23,Math.ceil(cfg.fontSize*2.1+6)));
+  const h=Math.min(pageRowLimit,Math.max(cfg.fontSize*1.45+cellPadding*2,
+    Math.max(...heights)+cellPadding*2));
   if(y+h>doc.page.height-44){doc.addPage();y=header();}
   if(index%2===0)doc.rect(32,y,space,h).fill('#f3f6fc');
   let x=32;cfg.columns.forEach((c,i)=>{
-   doc.fillColor('#223049').font('Helvetica').fontSize(cfg.fontSize).text(values[i],x+5,y+6,{
-    width:Math.max(5,widths[i]-10),height:h-10,ellipsis:true,lineGap:1
+   doc.fillColor('#223049').font('Helvetica').fontSize(cfg.fontSize).text(values[i],x+4,y+cellPadding,{
+    width:Math.max(5,widths[i]-8),height:h-cellPadding*2,ellipsis:true,lineGap:0
    });
    x+=widths[i];
   });
