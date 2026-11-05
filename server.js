@@ -892,7 +892,7 @@ const server = http.createServer(async (req,res) => {
       const file=path.join(MEDIA,relative);if(!fs.existsSync(file))fail(404,'Missing file.');
       return streamFile(req,res,file,true);
     }
-    if(['GET','HEAD'].includes(req.method) && (route==='/' || /^\/(index\.html|manifest\.webmanifest|app\.js|extensions\.js|v12\.js|v13\.js|v14\.js|v15\.js|v16\.js|v17\.js|style\.css|icon\.svg)$/.test(route))) {
+    if(['GET','HEAD'].includes(req.method) && (route==='/' || /^\/(index\.html|manifest\.webmanifest|app\.js|extensions\.js|v12\.js|v13\.js|v14\.js|v15\.js|v16\.js|v17\.js|v18\.js|style\.css|icon\.svg)$/.test(route))) {
       const name=route==='/'?'index.html':route.slice(1);
       const file=path.join(PUBLIC,name);if(!fs.existsSync(file))fail(404,'Asset not found.');
       return streamFile(req,res,file);
