@@ -14,6 +14,7 @@ const PUBLIC = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 8765);
 const HOST = process.env.HOST || '127.0.0.1';
 const APP_VERSION = '1.4.3-beta';
+const SECURE_COOKIES = process.env.EVENTFLOW_SECURE_COOKIES === '1';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 1024) * 1024 * 1024;
 const SESSION_AGE = 12 * 3600 * 1000;
 const LEASE_MS = 90 * 1000;
@@ -93,6 +94,7 @@ if (!db.users.length && seedAdmin) {
   console.log('Initial admin account created. Remove the password variable from future startup configurations.');
 }
 if (!db.users.length) console.warn('SETUP REQUIRED: Set EVENTFLOW_ADMIN_PASSWORD before starting. No default password is embedded.');
+const cookieFlags = '; HttpOnly; SameSite=Lax; Path=/' + (SECURE_COOKIES ? '; Secure' : '');
 const cookie = (req, name) => (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith(name + '='))?.slice(name.length + 1);
 function userOf(req) {
   const token = cookie(req, 'ef_session');
@@ -208,12 +210,12 @@ const server = http.createServer(async (req,res) => {
       if (!u || !checkPassword(body.password, u.password)) fail(401,'Invalid username or password.');
       const token = crypto.randomBytes(32).toString('hex');
       sessions.set(token,{userId:u.id,expiry:time()+SESSION_AGE});
-      return send(res,200,{user:publicUser(u)}, {'Set-Cookie':'ef_session='+token+'; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200'});
+      return send(res,200,{user:publicUser(u)}, {'Set-Cookie':'ef_session='+token+cookieFlags+'; Max-Age=43200'});
     }
     if (route === '/api/logout' && req.method==='POST') {
       sessions.delete(cookie(req,'ef_session'));
       for(const [id,l] of leases) if(l.token===cookie(req,'ef_session')) { leases.delete(id); broadcast(id); }
-      return send(res,200,{ok:true},{'Set-Cookie':'ef_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'});
+      return send(res,200,{ok:true},{'Set-Cookie':'ef_session='+cookieFlags+'; Max-Age=0'});
     }
     if (route === '/api/backup/full' && req.method==='GET') {
       need(user,['admin']);
