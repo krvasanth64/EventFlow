@@ -486,8 +486,12 @@ const server = http.createServer(async (req,res) => {
     if (route === '/api/me') { need(user); return send(res,200,{user:publicUser(user), settings:{port:PORT, mediaRoot:MEDIA}}); }
     if (route === '/api/events' && req.method==='GET') {
       need(user);
+      const counts=new Map();
+      for(const p of db.programs)counts.set(p.eventId,(counts.get(p.eventId)||0)+1);
+      // Lightweight chooser: do NOT send the catalogs, notes or full event records until selected.
       return send(res,200,{events:db.events.filter(e=>!e.isArchived&&(!e.isDemo||db.settings.demoEnabled||user.role==='admin'))
-        .map(e=>({...e,programCount:db.programs.filter(p=>p.eventId===e.id).length}))
+        .map(e=>({id:e.id,title:e.title,date:e.date,start:e.start,venue:e.venue||'',
+          status:e.status,revision:e.revision,isDemo:!!e.isDemo,programCount:counts.get(e.id)||0}))
         .sort((a,b)=>b.date.localeCompare(a.date))});
     }
     if(route==='/api/admin/events'&&req.method==='GET'){
