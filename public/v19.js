@@ -34,7 +34,6 @@ function ef19Navigation(host,filtered,activePage,totalPages){
  $('#ef19Next').onclick=()=>{ef19Paging.page=Math.min(totalPages-1,ef19Paging.page+1);v12RenderQueue()};
  $('#ef19Stage').onclick=()=>{ef19Paging.page=ef19InitialPage(filtered);v12RenderQueue()};
 }
-const ef19QueueBefore=v12RenderQueue;
 v12RenderQueue=function(){
  const c=current(),host=$('#v12LiveQueue');if(!c||!host)return;
  const all=c.programs||[],forecast=efForecast(c.event,all),active=all.find(efActive);
